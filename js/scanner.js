@@ -9,15 +9,16 @@
    Capture flow: tap the capture button -> only the region inside the
    card-frame guide is cropped out and sent for identification (see
    getFrameCropRect()), so other cards visible elsewhere in the camera
-   view don't get misidentified. CardSight AI then identifies that photo
-   (see js/cardsight-client.js) for a rough name/number guess and a
-   best-effort raw-vs-slab tag. CardSight's own top guess is often
-   slightly off (wrong number, near-miss name), so rather than trust it
-   directly, that guess seeds a real PokeWallet catalog search (the same
-   ranking logic used by the live search-as-you-type widget elsewhere in
-   the app) - the actual card usually still surfaces in the top few
-   ranked results even when CardSight's guess isn't exact, giving you
-   several candidates to pick from instead of one likely-wrong answer.
+   view don't get misidentified. Gemini vision then identifies that photo
+   (see js/gemini-client.js) for a name/number guess, whether the printed
+   text is Japanese, and a best-effort raw-vs-slab (+ grade/cert) tag, all
+   in one call. Gemini's own guess is often slightly off (wrong number,
+   near-miss name), so rather than trust it directly, that guess seeds a
+   real PokeWallet catalog search (the same ranking logic used by the live
+   search-as-you-type widget elsewhere in the app) - the actual card
+   usually still surfaces in the top few ranked results even when Gemini's
+   guess isn't exact, giving you several candidates to pick from instead
+   of one likely-wrong answer.
    - Raw: the picked candidate already carries a PokeWallet catalog id, so
      its real market price is fetched immediately.
    - Slab: no free graded-price source exists yet, so you fill in grading
@@ -39,7 +40,8 @@ class PokAddictsScanner {
 
     this.pendingSuggestions = []; // candidate cards awaiting a tap-to-confirm
     this.suggestionsExpanded = false; // false = show only the top match + "N More" link, true = show the full list
-    this.pendingIsSlab = false; // whether CardSight's original detection looked like a graded slab
+    this.pendingIsSlab = false; // whether Gemini's original detection looked like a graded slab
+    this.pendingSlabInfo = null; // { grade, gradingCompany, certNumber } read off the slab by Gemini, pre-fills the slab form
     this.pendingSlabSuggestion = null; // the confirmed card being filled in as a slab (grading/cost/market)
     this.pendingVariantChoice = null; // { name, set, catalogCardId, variants } - awaiting a Normal/Holo/Reverse Holo pick
     this.scanLanguage = 'eng'; // 'eng' | 'jap' - which language edition to prioritize in suggestions
@@ -55,6 +57,7 @@ class PokAddictsScanner {
     this.pendingSuggestions = [];
     this.suggestionsExpanded = false;
     this.pendingIsSlab = false;
+    this.pendingSlabInfo = null;
     this.pendingSlabSuggestion = null;
     this.pendingVariantChoice = null;
     this.scanLanguage = 'eng';
@@ -329,31 +332,25 @@ class PokAddictsScanner {
     try {
       const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
 
-      // CardSight recognizes English cards well but Japanese ones less
-      // reliably. Running a quick on-device OCR pass in parallel - just
-      // to detect Japanese text and pull a card number, both far more
-      // reliable than trying to read the full name - gives Japanese cards
-      // a second, independent chance at a correct guess.
-      const [detections, ocrHint] = await Promise.all([
-        window.cardSightClient.identifyCards(blob).catch(err => {
-          console.error('Card identification failed:', err);
-          return [];
-        }),
-        this.quickOcrHint(canvas)
-      ]);
+      const detections = await window.geminiClient.identifyCards(blob).catch(err => {
+        console.error('Card identification failed:', err);
+        return [];
+      });
 
-      let primary = detections[0] || null;
-      if (!primary && ocrHint?.translatedName) {
-        primary = { name: ocrHint.translatedName, number: ocrHint.number, set: '', isSlab: false };
-      }
+      const primary = detections[0] || null;
 
       if (!primary) {
         this.pendingSuggestions = [];
         this.view = 'capture';
         window.app.showToast('⚠️ Could not identify this card - search manually above.');
       } else {
-        this.pendingSuggestions = await this.buildCandidateList(primary, ocrHint);
+        this.pendingSuggestions = await this.buildCandidateList(primary);
         this.pendingIsSlab = primary.isSlab;
+        // Carried through to confirmSuggestion() so a detected graded slab
+        // pre-fills its grading company/grade/cert number instead of
+        // always starting blank, even though Gemini already read them off
+        // the slab label photo.
+        this.pendingSlabInfo = { grade: primary.grade || '', gradingCompany: primary.gradingCompany || '', certNumber: primary.certNumber || '' };
         this.suggestionsExpanded = false;
         this.view = this.pendingSuggestions.length > 0 ? 'suggestions' : 'capture';
         if (this.pendingSuggestions.length === 0) {
@@ -370,50 +367,27 @@ class PokAddictsScanner {
     }
   }
 
-  // On-device OCR (Tesseract.js) used only for two narrow, reliable
-  // signals - not full name-reading (which foil/glare/stylized fonts make
-  // unreliable): whether the visible text is Japanese, and the printed
-  // card number (plain digits, easy to read regardless of language). If a
-  // known Japanese species name is found in the OCR text, its English
-  // name is included too.
-  async quickOcrHint(canvas) {
-    if (typeof Tesseract === 'undefined') return null;
-    try {
-      const { data } = await Tesseract.recognize(canvas, 'eng+jpn');
-      const text = data.text || '';
-      const hasJapanese = /[぀-ヿ一-鿿]/.test(text);
-      const numberMatch = text.match(/(\d{1,4})\s*\/\s*(\d{1,4})/);
-      const number = numberMatch ? numberMatch[1] : '';
-      const japaneseSpeciesName = hasJapanese ? this.findJapaneseSpeciesMatch(text) : null;
-      const translatedName = japaneseSpeciesName ? window.POKEMON_JP_NAMES[japaneseSpeciesName] : null;
-      return { hasJapanese, number, translatedName, japaneseSpeciesName };
-    } catch (err) {
-      console.warn('OCR hint failed:', err);
-      return null;
-    }
-  }
-
-  // CardSight's guess seeds a real PokeWallet catalog search (local cache
+  // Gemini's guess seeds a real PokeWallet catalog search (local cache
   // first, live search fallback) - the correct card usually surfaces
   // among the top ranked results even if the guess wasn't exact, giving
   // several real candidates instead of one possibly-wrong answer. The raw
-  // CardSight guess is kept as a fallback option too, in case the actual
+  // Gemini guess is kept as a fallback option too, in case the actual
   // card isn't in the PokeWallet catalog yet.
   // Wrapped in an outer try/catch so that any unexpected failure here
   // (a bad response shape, a rate-limited request that throws somewhere
-  // not already guarded, etc.) still falls back to CardSight's raw guess
+  // not already guarded, etc.) still falls back to Gemini's raw guess
   // instead of bubbling up to captureAndIdentify's catch block, which
   // would wipe out suggestions entirely and leave the scan looking dead.
-  async buildCandidateList(primary, ocrHint) {
+  async buildCandidateList(primary) {
     try {
-      return await this._buildCandidateListInner(primary, ocrHint);
+      return await this._buildCandidateListInner(primary);
     } catch (err) {
       console.warn('buildCandidateList failed, falling back to raw guess:', err);
-      return primary.name ? [{ name: primary.name, set: primary.set, number: primary.number, catalogCardId: '', source: 'cardsight' }] : [];
+      return primary.name ? [{ name: primary.name, set: primary.set, number: primary.number, catalogCardId: '', source: 'gemini' }] : [];
     }
   }
 
-  async _buildCandidateListInner(primary, ocrHint) {
+  async _buildCandidateListInner(primary) {
     const query = [primary.name, primary.number].filter(Boolean).join(' ').trim();
     // Local search is instant; a live PokeWallet call is not, and the free
     // tier's rate limit (100/hour) is shared across the whole scanning
@@ -440,58 +414,51 @@ class PokAddictsScanner {
     }));
 
     if (candidates.length === 0 || candidates[0].name.toLowerCase() !== (primary.name || '').toLowerCase()) {
-      candidates.push({ name: primary.name, set: primary.set, number: primary.number, catalogCardId: '', source: 'cardsight' });
+      candidates.push({ name: primary.name, set: primary.set, number: primary.number, catalogCardId: '', source: 'gemini' });
     }
 
     // Card NAMES are in English regardless of the set's language (verified
     // against PokeWallet's own data - a card from a Japanese-only set is
     // still named e.g. "Pikachu", not Japanese text), so the query itself
-    // stays in English (OCR's translated species name if it read Japanese
-    // text, else CardSight's own guess) - only the candidate pool gets
-    // narrowed to Japanese-language sets, whenever Japanese is in play.
-    // Auto-triggering just off ocrHint.hasJapanese (a raw regex test over
-    // noisy OCR text - busy card art can false-positive on English cards)
-    // meant an extra, slower live search fired on plenty of English scans
-    // for no benefit - so the automatic path now requires OCR to have
-    // actually resolved a species name, not merely flagged Japanese-ish
-    // text. The manual JP toggle is unaffected - that's explicit intent,
-    // worth the extra call even without a resolved OCR name.
-    const wantJapanese = this.scanLanguage === 'jap' || !!ocrHint?.translatedName;
-    if (wantJapanese) {
-      const jpNameGuess = ocrHint?.translatedName || primary.name;
-      if (jpNameGuess) {
-        const jpQuery = [jpNameGuess, ocrHint?.number || primary.number].filter(Boolean).join(' ').trim();
-        let jpMatches = window.cardCatalog ? window.cardCatalog.searchLocalByLanguage(jpQuery, 'jap', 4) : [];
+    // stays in English - Gemini already reads the species name off the
+    // card directly, so no separate OCR/translation pass is needed here
+    // like the old CardSight+Tesseract combo required. Only the candidate
+    // pool gets narrowed to Japanese-language sets, whenever Japanese is
+    // in play (Gemini read Japanese text on the card, or the language
+    // toggle is set to JP).
+    const wantJapanese = this.scanLanguage === 'jap' || primary.isJapanese;
+    if (wantJapanese && primary.name) {
+      const jpQuery = [primary.name, primary.number].filter(Boolean).join(' ').trim();
+      let jpMatches = window.cardCatalog ? window.cardCatalog.searchLocalByLanguage(jpQuery, 'jap', 4) : [];
 
-        // Local sync covers under half of PokeWallet's ~460 Japanese sets
-        // at any given time (it's a slow, resumable background import) -
-        // a live search filtered to Japanese-tagged sets fills the gap for
-        // sets the device hasn't synced yet.
-        if (jpMatches.length === 0 && window.pokeWalletClient?.configured) {
-          try {
-            const res = await window.pokeWalletClient.searchCards(jpQuery, { limit: 15 });
-            const liveCards = (res.results || []).map(r => window.cardSearchUI.normalizeLiveSearchResult(r));
-            await window.cardCatalog.cacheLiveResults(liveCards);
-            const jpLiveCards = liveCards.filter(c => (c.language || '').toLowerCase().startsWith('jap'));
-            jpMatches = window.cardCatalog.rankCards(jpLiveCards, jpQuery).slice(0, 4);
-          } catch (err) {
-            console.warn('Live Japanese-edition search failed:', err);
-          }
+      // Local sync covers under half of PokeWallet's ~460 Japanese sets
+      // at any given time (it's a slow, resumable background import) -
+      // a live search filtered to Japanese-tagged sets fills the gap for
+      // sets the device hasn't synced yet.
+      if (jpMatches.length === 0 && window.pokeWalletClient?.configured) {
+        try {
+          const res = await window.pokeWalletClient.searchCards(jpQuery, { limit: 15 });
+          const liveCards = (res.results || []).map(r => window.cardSearchUI.normalizeLiveSearchResult(r));
+          await window.cardCatalog.cacheLiveResults(liveCards);
+          const jpLiveCards = liveCards.filter(c => (c.language || '').toLowerCase().startsWith('jap'));
+          jpMatches = window.cardCatalog.rankCards(jpLiveCards, jpQuery).slice(0, 4);
+        } catch (err) {
+          console.warn('Live Japanese-edition search failed:', err);
         }
-
-        jpMatches.forEach(m => {
-          if (!candidates.some(c => c.catalogCardId === m.id)) {
-            candidates.unshift({ name: m.name, set: m.set, number: m.number, catalogCardId: m.id, source: 'japanese' });
-          }
-        });
       }
+
+      jpMatches.forEach(m => {
+        if (!candidates.some(c => c.catalogCardId === m.id)) {
+          candidates.unshift({ name: m.name, set: m.set, number: m.number, catalogCardId: m.id, source: 'japanese' });
+        }
+      });
     }
 
     return candidates;
   }
 
   sourceLabel(source) {
-    if (source === 'cardsight') return ' • AI guess, unverified';
+    if (source === 'gemini') return ' • AI guess, unverified';
     if (source === 'japanese') return ' • Japanese edition match';
     return '';
   }
@@ -563,12 +530,24 @@ class PokAddictsScanner {
     if (!suggestion) return;
 
     const isSlab = this.pendingIsSlab;
+    const slabInfo = this.pendingSlabInfo || {};
     this.pendingSuggestions = [];
     this.suggestionsExpanded = false;
     this.pendingIsSlab = false;
+    this.pendingSlabInfo = null;
 
     if (isSlab) {
-      this.pendingSlabSuggestion = { name: suggestion.name, set: suggestion.set, isSlab: true, grade: '', gradingCompany: '', certNumber: '' };
+      // Pre-fill whatever Gemini already read off the slab label - grade,
+      // grading company, cert number - so the form only needs a manual fix
+      // when it got something wrong, not a full re-entry every time.
+      this.pendingSlabSuggestion = {
+        name: suggestion.name,
+        set: suggestion.set,
+        isSlab: true,
+        grade: slabInfo.grade || '',
+        gradingCompany: slabInfo.gradingCompany || '',
+        certNumber: slabInfo.certNumber || ''
+      };
       this.view = 'slabDetails';
       this.renderDynamicSectionOnly();
       return;
@@ -766,6 +745,10 @@ class PokAddictsScanner {
             </select>
           </div>
         </div>
+        <div class="form-group">
+          <label class="form-label">Cert Number${s.certNumber ? ' (read from slab)' : ''}</label>
+          <input type="text" id="scan-cert-number" class="form-control" placeholder="e.g. 48658983" value="${s.certNumber || ''}">
+        </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
           <div class="form-group">
             <label class="form-label">Cost Basis ($)</label>
@@ -789,6 +772,7 @@ class PokAddictsScanner {
 
     const company = document.getElementById('scan-cert-company')?.value || s.gradingCompany || 'PSA';
     const gradeVal = document.getElementById('scan-cert-grade')?.value || s.grade || '10';
+    const certNumber = document.getElementById('scan-cert-number')?.value.trim() || '';
     const cost = parseFloat(document.getElementById('scan-cert-cost')?.value) || 0;
     const market = parseFloat(document.getElementById('scan-cert-market')?.value) || 0;
 
@@ -803,7 +787,7 @@ class PokAddictsScanner {
       type: 'slab',
       gradingCompany: company,
       grade: gradeVal === '10' ? '10 GEM MT' : gradeVal,
-      certNumber: s.certNumber || '',
+      certNumber,
       marketValue: market,
       presetCost: cost
     });

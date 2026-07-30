@@ -178,13 +178,13 @@ class CardSearchUI {
 
     const pricePromise = window.pokeWalletClient.getCard(cardId)
       .then((detail) => {
-        const { price, source } = window.pokeWalletClient.extractMarketPriceSGD(detail);
+        const { price } = window.pokeWalletClient.extractMarketPriceSGD(detail);
         this.resolvedCard.marketValue = price;
         if (price > 0) gotPrice = true;
 
         const priceLine = document.getElementById('card-search-price-line');
         if (priceLine) {
-          priceLine.textContent = price > 0 ? `S$${price.toFixed(2)} ${source ? `(${source})` : ''}` : 'No live price found';
+          priceLine.textContent = price > 0 ? `S$${price.toFixed(2)}` : 'No live price found';
         }
       })
       .catch((err) => {

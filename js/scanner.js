@@ -558,7 +558,7 @@ class PokAddictsScanner {
 
     if (!catalogCardId) {
       this.addRawToScanList(finalName, setName, '', 0);
-      window.app.showToast(`Added ${finalName} to scan list (${this.scanList.length}) - no PokeWallet price found, edit manually`);
+      window.app.showToast(`Added ${finalName} to scan list (${this.scanList.length}) - no price found, edit manually`);
       this.renderDynamicSectionOnly();
       return;
     }
@@ -787,7 +787,7 @@ class PokAddictsScanner {
           </div>
           <div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 10px;">
             <div>
-              <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em;">Market Value (PokeWallet)</div>
+              <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em;">Market Value</div>
               <div style="font-size: 1.1rem; font-weight: 800; color: var(--accent-cyan); font-family: 'JetBrains Mono', monospace;">$${(entry.marketValue || 0).toFixed(2)}</div>
             </div>
             <div style="text-align: right;">

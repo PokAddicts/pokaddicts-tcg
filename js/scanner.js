@@ -417,28 +417,40 @@ class PokAddictsScanner {
       candidates.push({ name: primary.name, set: primary.set, number: primary.number, catalogCardId: '', source: 'gemini' });
     }
 
-    // Card NAMES are in English regardless of the set's language (verified
-    // against TCGdex's own data - a card from a Japanese-only set is still
-    // named e.g. "Pikachu", not Japanese text), so the query itself stays
-    // in English - Gemini already reads the species name off the card
-    // directly, so no separate OCR/translation pass is needed here like
-    // the old CardSight+Tesseract combo required. Only the candidate pool
-    // gets narrowed to Japanese-language sets, whenever Japanese is in
-    // play (Gemini read Japanese text on the card, or the language toggle
-    // is set to JP).
-    const wantJapanese = this.scanLanguage === 'jap' || primary.isJapanese;
-    if (wantJapanese && primary.name) {
-      const jpQuery = [primary.name, primary.number].filter(Boolean).join(' ').trim();
-      let jpMatches = window.cardCatalog ? window.cardCatalog.searchLocalByLanguage(jpQuery, 'ja', 4) : [];
+    // TCGdex's Japanese catalog is inconsistent - some cards have an
+    // English name filled in, many still only have their native
+    // Japanese-script name (confirmed by inspection: e.g. Magikarp #080
+    // in the Japanese SV1a set is stored as "コイキング", not "Magikarp") -
+    // so this searches by NUMBER ONLY against the Japanese-language pool
+    // (see searchLocalByLanguage), using the English guess and a reverse-
+    // translated Japanese guess purely as a permissive tiebreaker, never
+    // as an exclusionary filter. Triggers whenever Japanese is explicitly
+    // in play (the language toggle, or Gemini reading Japanese text on
+    // the card), OR as a safety net when the English search above found
+    // nothing at all - Gemini's own Japanese-detection isn't perfect, and
+    // a genuinely Japanese-only card will never turn up in an English-only
+    // search regardless of what Gemini thought the language was.
+    const wantJapanese = this.scanLanguage === 'jap' || primary.isJapanese || matches.length === 0;
+    if (wantJapanese && primary.number) {
+      const nameHints = [primary.name, this.translateEnglishToJapanese(primary.name)].filter(Boolean);
+      let jpMatches = window.cardCatalog ? window.cardCatalog.searchLocalByLanguage(primary.number, 'ja', 6, nameHints) : [];
 
-      // Live search filtered to the Japanese endpoint fills the gap for
-      // sets the local device hasn't synced yet.
+      // Live search filtered to the Japanese endpoint (number only, same
+      // reasoning as above) fills the gap for sets the local device
+      // hasn't synced yet.
       if (jpMatches.length === 0 && window.tcgdexClient?.configured) {
         try {
-          const results = await window.tcgdexClient.searchCards(jpQuery, { limit: 15, lang: 'ja' });
+          const results = await window.tcgdexClient.searchCards(primary.number, { limit: 20, lang: 'ja' });
           const liveCards = results.map(r => window.cardSearchUI.normalizeLiveSearchResult(r, 'ja'));
           await window.cardCatalog.cacheLiveResults(liveCards);
-          jpMatches = window.cardCatalog.rankCards(liveCards, jpQuery).slice(0, 4);
+          const hints = nameHints.map(h => h.toLowerCase());
+          jpMatches = liveCards
+            .sort((a, b) => {
+              const aMatch = hints.some(h => (a.name || '').toLowerCase().includes(h)) ? 0 : 1;
+              const bMatch = hints.some(h => (b.name || '').toLowerCase().includes(h)) ? 0 : 1;
+              return aMatch - bMatch;
+            })
+            .slice(0, 6);
         } catch (err) {
           console.warn('Live Japanese-edition search failed:', err);
         }
@@ -720,6 +732,23 @@ class PokAddictsScanner {
   translateJapaneseName(text) {
     const bestMatch = this.findJapaneseSpeciesMatch(text);
     return bestMatch ? window.POKEMON_JP_NAMES[bestMatch] : null;
+  }
+
+  // Reverse of POKEMON_JP_NAMES (English -> Japanese), built once on first
+  // use - lets Gemini's English guess be translated into a plausible
+  // Japanese name, used as a permissive hint (not a filter) when searching
+  // TCGdex's Japanese catalog, since many of its entries only have their
+  // native-script name filled in rather than an English one.
+  translateEnglishToJapanese(name) {
+    if (!name || !window.POKEMON_JP_NAMES) return null;
+    if (!this._enToJpMap) {
+      this._enToJpMap = {};
+      for (const jpName in window.POKEMON_JP_NAMES) {
+        const en = window.POKEMON_JP_NAMES[jpName].toLowerCase();
+        if (!this._enToJpMap[en]) this._enToJpMap[en] = jpName;
+      }
+    }
+    return this._enToJpMap[name.toLowerCase()] || null;
   }
 
   // --- Graded slabs: manual grading/cost/market entry ---

@@ -50,13 +50,22 @@ class TCGdexClient {
   }
 
   // Brief search (id/localId/name/image only - no set name/total, see
-  // card-catalog.js's enrichBriefResult() for how that gets filled in
-  // from already-synced local set metadata without an extra request).
+  // card-search-ui.js's normalizeLiveSearchResult() for how that gets
+  // filled in from already-synced local set metadata without an extra
+  // request).
   async searchCards(query, { limit = 10, lang = 'en' } = {}) {
     const { namePart, numberPart } = window.cardCatalog ? window.cardCatalog.parseCardQuery(query) : { namePart: query, numberPart: null };
-    let path = `/cards?name=like:${encodeURIComponent(namePart || query)}`;
-    if (numberPart) path += `&localId=${encodeURIComponent(numberPart)}`;
-    const results = await this.request(lang, path);
+    // A pure-number query (namePart empty - e.g. searching by card number
+    // alone, or the scanner's Japanese fallback search which deliberately
+    // skips the name filter, see scanner.js) must NOT fall back to
+    // filtering by the whole raw query as a "name" - a number is never a
+    // substring of a card's name, so that silently returned zero results.
+    const params = [];
+    if (namePart) params.push(`name=like:${encodeURIComponent(namePart)}`);
+    if (numberPart) params.push(`localId=${encodeURIComponent(numberPart)}`);
+    if (params.length === 0) params.push(`name=like:${encodeURIComponent(query)}`);
+
+    const results = await this.request(lang, `/cards?${params.join('&')}`);
     return (results || []).slice(0, limit);
   }
 

@@ -1046,6 +1046,8 @@ select.form-control {
   border: 1px solid var(--border-subtle);
   border-radius: var(--border-radius);
   padding: 14px;
+  min-width: 0; /* grid items default to min-width:auto - a large $ figure in .kpi-value could otherwise force this wider than its 1fr share */
+  overflow-wrap: break-word;
 }
 
 .kpi-label {
@@ -1085,6 +1087,24 @@ select.form-control {
 .trade-column .trade-item-pill > span {
   min-width: 0; /* same fix, one level down - flex items have the same default */
   overflow-wrap: break-word;
+}
+
+/* Generic safety net for any button placed in a narrow container (a grid
+   column, a flex:1 half-width slot, etc.) - .btn's white-space:nowrap
+   (needed to stop text clipping inside a FIXED-height box) has the side
+   effect of letting long labels overflow a narrow box instead. This lets
+   the label wrap onto two lines and the box grow to fit, rather than
+   either clipping or spilling outside its container. */
+.btn-wrap-safe {
+  white-space: normal;
+  height: auto;
+  min-height: 48px;
+  line-height: 1.3;
+}
+
+.btn-wrap-safe.btn-sm {
+  min-height: 36px;
+  padding: 8px 10px;
 }
 
 /* Action button at the bottom of each trade column (+ Pick Item / +

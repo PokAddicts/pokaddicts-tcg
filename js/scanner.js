@@ -813,8 +813,8 @@ class PokAddictsScanner {
         </div>
 
         <div style="display: flex; gap: 8px; margin-top: 8px;">
-          <button class="btn btn-green" style="flex: 1;" onclick="window.scanner.markBatchBought()">💰 Bought (Buyback)</button>
-          <button class="btn btn-cyan" style="flex: 1;" onclick="window.scanner.markBatchTraded()">🔄 Traded</button>
+          <button class="btn btn-green btn-wrap-safe" style="flex: 1;" onclick="window.scanner.markBatchBought()">💰 Bought</button>
+          <button class="btn btn-cyan btn-wrap-safe" style="flex: 1;" onclick="window.scanner.markBatchTraded()">🔄 Traded</button>
         </div>
       </div>
     `;

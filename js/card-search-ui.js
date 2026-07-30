@@ -143,8 +143,8 @@ class CardSearchUI {
           </div>
         </div>
         <div style="display: flex; gap: 8px; margin-top: 10px;">
-          <button type="button" class="btn btn-green btn-sm" style="flex: 1;" onclick="window.cardSearchUI.confirmSelection()">✓ Use This Card</button>
-          <button type="button" class="btn btn-secondary btn-sm" style="flex: 1;" onclick="window.cardSearchUI.dismissPreview()">✕ Not This One</button>
+          <button type="button" class="btn btn-green btn-sm btn-wrap-safe" style="flex: 1;" onclick="window.cardSearchUI.confirmSelection()">✓ Use This</button>
+          <button type="button" class="btn btn-secondary btn-sm btn-wrap-safe" style="flex: 1;" onclick="window.cardSearchUI.dismissPreview()">✕ Not This</button>
         </div>
       `;
     }

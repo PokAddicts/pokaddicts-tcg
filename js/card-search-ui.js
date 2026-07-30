@@ -208,7 +208,9 @@ class CardSearchUI {
       })
       .catch((err) => console.warn('Card image fetch failed:', err));
 
-    const pricePromise = window.tcgdexClient.getCard(cardId, card.language || 'en')
+    const cardLang = card.language || 'en';
+    const pricePromise = window.tcgdexClient.getCard(cardId, cardLang)
+      .catch(() => window.tcgdexClient.getCard(cardId, cardLang === 'ja' ? 'en' : 'ja'))
       .then((detail) => {
         const { price, source } = window.tcgdexClient.extractMarketPriceSGD(detail);
         this.resolvedCard.marketValue = price;

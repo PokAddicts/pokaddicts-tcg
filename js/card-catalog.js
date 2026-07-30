@@ -453,7 +453,8 @@ class CardCatalog {
     const card = this.getCardById(cardId);
     const lang = card?.language || 'en';
     try {
-      const detail = await window.tcgdexClient.getCard(cardId, lang);
+      const detail = await window.tcgdexClient.getCard(cardId, lang)
+        .catch(() => window.tcgdexClient.getCard(cardId, lang === 'ja' ? 'en' : 'ja'));
       return window.tcgdexClient.extractMarketPriceSGD(detail);
     } catch (err) {
       console.warn('Price lookup failed:', err);

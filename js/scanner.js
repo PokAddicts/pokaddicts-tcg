@@ -240,20 +240,23 @@ class PokAddictsScanner {
     `;
   }
 
-  // Fetches and caches thumbnails for chips that don't have one yet.
+  // Fetches and caches thumbnails for chips that don't have one yet -
+  // in parallel (not a sequential for-await loop), since each image is an
+  // independent network request and waiting for one before starting the
+  // next only added up delay for no reason.
   async loadScannedChipThumbnails() {
-    for (const entry of this.scanList) {
-      if (entry.imageUrl || !entry.catalogCardId || !window.tcgdexClient?.configured) continue;
+    await Promise.all(this.scanList.map(async (entry) => {
+      if (entry.imageUrl || !entry.catalogCardId || !window.tcgdexClient?.configured) return;
       try {
         const url = await window.tcgdexClient.getImageBlobUrl(entry.catalogCardId, 'low');
-        if (!url) continue;
+        if (!url) return;
         entry.imageUrl = url;
         const el = document.getElementById(`scan-chip-thumb-${entry.tempId}`);
         if (el) el.innerHTML = `<img src="${url}" alt="${entry.name}">`;
       } catch (err) {
         console.warn('Chip thumbnail fetch failed:', err);
       }
-    }
+    }));
   }
 
   // Fetches the card image for whichever result is currently the
@@ -625,7 +628,16 @@ class PokAddictsScanner {
 
     let variants = [];
     try {
-      const detail = await window.tcgdexClient.getCard(catalogCardId, cardLang);
+      let detail;
+      try {
+        detail = await window.tcgdexClient.getCard(catalogCardId, cardLang);
+      } catch (err) {
+        // cardLang came from a local-catalog lookup that may be stale or
+        // have missed - a card only exists under its real language's
+        // endpoint (a Japanese-only id 404s under /en/), so try the other
+        // language before giving up on price entirely.
+        detail = await window.tcgdexClient.getCard(catalogCardId, cardLang === 'ja' ? 'en' : 'ja');
+      }
       variants = window.tcgdexClient.extractAllVariantsSGD(detail);
     } catch (err) {
       console.warn('TCGdex price fetch failed:', err);

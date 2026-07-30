@@ -18,26 +18,29 @@ class InventoryComponent {
   async loadItemImages(items) {
     if (!window.tcgdexClient?.configured) return;
 
-    for (const item of items) {
-      if (item.type !== 'raw' || !item.catalogCardId) continue;
+    // Fetched in parallel (not a sequential for-await loop) - each image
+    // is an independent network request, so waiting for one to finish
+    // before starting the next only added up delay for no reason.
+    await Promise.all(items.map(async (item) => {
+      if (item.type !== 'raw' || !item.catalogCardId) return;
       const elId = `item-icon-${item.id}`;
 
       if (this.imageUrlCache[item.catalogCardId]) {
         const el = document.getElementById(elId);
         if (el) el.innerHTML = `<img src="${this.imageUrlCache[item.catalogCardId]}" alt="${item.name}">`;
-        continue;
+        return;
       }
 
       try {
         const url = await window.tcgdexClient.getImageBlobUrl(item.catalogCardId, 'low');
-        if (!url) continue;
+        if (!url) return;
         this.imageUrlCache[item.catalogCardId] = url;
         const el = document.getElementById(elId);
         if (el) el.innerHTML = `<img src="${url}" alt="${item.name}">`;
       } catch (err) {
         console.warn('Item image fetch failed:', err);
       }
-    }
+    }));
   }
 
   renderInventoryPage() {

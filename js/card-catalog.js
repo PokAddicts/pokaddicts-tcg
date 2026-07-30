@@ -299,6 +299,27 @@ class CardCatalog {
     return this.rankCards(this.cards, query).slice(0, limit);
   }
 
+  // Keeps only the first entry for each distinct card NUMBER. Once a
+  // number has already been shown, further entries sharing it (different
+  // sets/prints that all happen to use the same number, or entries the
+  // Japanese name-only search fallback pulls in from several sources) just
+  // read as repeated/duplicate suggestions rather than useful extra
+  // choices. Entries with no number at all are never deduped against each
+  // other (nothing to compare).
+  dedupeByNumber(cards) {
+    const seen = new Set();
+    const result = [];
+    for (const c of cards) {
+      const key = (c.number || '').toString();
+      if (key) {
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+      result.push(c);
+    }
+    return result;
+  }
+
   // Same idea as searchLocal, but restricted to one set-language edition
   // (e.g. 'ja'), and ALWAYS REQUIRING a name-hint match - not just as a
   // tiebreaker. A card number is reused across hundreds of unrelated
@@ -371,7 +392,7 @@ class CardCatalog {
 
     const idx = text.indexOf(bestMatch);
     let before = text.slice(0, idx).trim();
-    const after = text.slice(idx + bestMatch.length).trim();
+    let after = text.slice(idx + bestMatch.length).trim();
     const english = window.POKEMON_JP_NAMES[bestMatch];
 
     const prefixTranslations = { 'メガ': 'Mega', 'アローラ': 'Alolan', 'ガラル': 'Galarian', 'ヒスイ': 'Hisuian', 'パルデア': 'Paldean' };
@@ -381,6 +402,14 @@ class CardCatalog {
         break;
       }
     }
+
+    // TCGdex's own English catalog confirms the real spacing: "Mega
+    // Charizard X ex", not "Mega Charizard Xex" - a form letter (X/Y) is
+    // its own separate word from the following "ex"/"gx" suffix, even
+    // though the raw Japanese text has them jammed together with no space.
+    // Requiring the prefix to be fully uppercase avoids ever matching a
+    // genuine word that happens to end in "ex"/"gx".
+    after = after.replace(/^([A-Z]+)(ex|gx)$/, '$1 $2');
 
     return [before, english, after].filter(Boolean).join(' ').trim();
   }
@@ -488,32 +517,46 @@ class CardCatalog {
     return this.cards.find(c => c.id === id) || null;
   }
 
-  // Fetches a card's image, falling back to PokeWallet when TCGdex has
-  // none - a real, confirmed gap for some Japanese sets/secret rares
-  // (TCGdex simply has no image asset uploaded for them yet). Runs
-  // concurrently with whatever price fetch a caller is also doing for the
-  // same card, since callers await this alongside a separate price
-  // promise rather than one blocking the other.
+  // Fetches a card's image from TCGdex and PokeWallet AT THE SAME TIME
+  // (not one after the other) and returns whichever comes back with a
+  // real image first - TCGdex usually has it, but a confirmed real gap
+  // for some Japanese sets/secret rares means it sometimes has nothing at
+  // all, and waiting for that failure before even starting the PokeWallet
+  // attempt added a full extra round trip of delay for no reason.
   async getCardImageUrl(catalogCardId, size = 'low') {
-    try {
-      const url = await window.tcgdexClient.getImageBlobUrl(catalogCardId, size);
-      if (url) return url;
-    } catch (err) {
-      console.warn('TCGdex image fetch failed:', err);
-    }
+    const card = this.getCardById(catalogCardId);
 
-    if (!window.pokeWalletClient?.configured) return null;
-    try {
-      const card = this.getCardById(catalogCardId);
-      if (!card) return null;
-      const displayName = this.translateJapaneseName(card.name) || card.name;
-      const match = await window.pokeWalletClient.findCardByNameAndNumber(displayName, card.number);
-      if (!match) return null;
-      return await window.pokeWalletClient.getImageBlobUrl(match.id, size);
-    } catch (err) {
-      console.warn('PokeWallet image fallback failed:', err);
-      return null;
-    }
+    const tcgdexPromise = window.tcgdexClient.getImageBlobUrl(catalogCardId, size)
+      .catch((err) => { console.warn('TCGdex image fetch failed:', err); return null; });
+
+    const pokeWalletPromise = (async () => {
+      if (!window.pokeWalletClient?.configured || !card) return null;
+      try {
+        const displayName = this.translateJapaneseName(card.name) || card.name;
+        const match = await window.pokeWalletClient.findCardByNameAndNumber(displayName, card.number);
+        if (!match) return null;
+        return await window.pokeWalletClient.getImageBlobUrl(match.id, size);
+      } catch (err) {
+        console.warn('PokeWallet image fetch failed:', err);
+        return null;
+      }
+    })();
+
+    const contenders = [tcgdexPromise, pokeWalletPromise];
+    return new Promise((resolve) => {
+      let remaining = contenders.length;
+      let settled = false;
+      contenders.forEach((p) => {
+        p.then((url) => {
+          if (!settled && url) {
+            settled = true;
+            resolve(url);
+          }
+          remaining -= 1;
+          if (remaining === 0 && !settled) resolve(null);
+        });
+      });
+    });
   }
 
   // Called after a confirm-step lookup finds neither an image nor a

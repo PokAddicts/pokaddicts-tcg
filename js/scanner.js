@@ -444,7 +444,7 @@ class PokAddictsScanner {
       });
     }
 
-    return candidates;
+    return window.cardCatalog.dedupeByNumber(candidates);
   }
 
   sourceLabel(source) {

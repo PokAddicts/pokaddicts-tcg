@@ -130,7 +130,7 @@ class CardSearchUI {
     });
     if (localMatches.length >= LOCAL_RESULT_THRESHOLD && hasExactNumberMatch) {
       dropdown.style.display = 'block';
-      dropdown.innerHTML = this.renderRows(localMatches);
+      dropdown.innerHTML = this.renderRows(window.cardCatalog.dedupeByNumber(localMatches));
       return;
     }
 
@@ -168,6 +168,8 @@ class CardSearchUI {
         jpMatches.forEach(m => { if (!ranked.some(r => r.id === m.id)) ranked.push(m); });
       }
 
+      ranked = window.cardCatalog.dedupeByNumber(ranked);
+
       if (ranked.length === 0) {
         dropdown.innerHTML = `<div class="card-search-empty">No matches found - type your own details below.</div>`;
         return;
@@ -177,7 +179,7 @@ class CardSearchUI {
     } catch (err) {
       console.error('Live search fallback failed:', err);
       dropdown.innerHTML = localMatches.length > 0
-        ? this.renderRows(localMatches)
+        ? this.renderRows(window.cardCatalog.dedupeByNumber(localMatches))
         : `<div class="card-search-empty">No catalog matches - type your own details below.</div>`;
     }
   }

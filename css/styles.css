@@ -868,12 +868,14 @@ select.form-control {
 }
 
 /* EN/JP language toggle - biases scan suggestions toward that language's
-   catalog edition. Pinned to the header's right edge since the title is
-   centered independently via absolute positioning above. */
+   catalog edition. Pinned to the header's LEFT edge (title is centered
+   independently via absolute positioning above) - the right edge is
+   already taken by the fullscreen close button (z-index 15, same corner),
+   which would otherwise sit on top of it. */
 .scanner-lang-toggle {
   position: absolute;
-  right: 16px;
-  right: max(16px, env(safe-area-inset-right));
+  left: 16px;
+  left: max(16px, env(safe-area-inset-left));
   display: flex;
   gap: 2px;
   background: rgba(0, 0, 0, 0.4);

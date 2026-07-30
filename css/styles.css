@@ -561,7 +561,7 @@ select.form-control {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--border-radius);
-  padding: 14px;
+  padding: 14px 30px 14px 14px; /* extra right padding reserves room for the absolutely-positioned delete button so it doesn't sit on top of the price column */
   display: flex;
   gap: 12px;
   align-items: center;
@@ -642,6 +642,30 @@ select.form-control {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
+}
+
+/* Sell/Trade/Restock share the row evenly at a smaller size so all three
+   fit on one line instead of wrapping and making the card taller. */
+.item-action-btn {
+  flex: 1;
+  min-width: 0;
+  padding: 0 4px;
+  font-size: 0.68rem;
+  gap: 3px;
+  height: 32px;
+}
+
+/* Delete moved to the card's top-right corner (red, icon-only) instead of
+   sitting in the action row, so it doesn't compete for space there. */
+.item-delete-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  color: var(--accent-red);
+  cursor: pointer;
+  font-size: 0.95rem;
+  z-index: 2;
+  padding: 2px 4px;
 }
 
 /* Modals */

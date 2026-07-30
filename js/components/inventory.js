@@ -242,6 +242,7 @@ class InventoryComponent {
 
     return `
       <div class="item-card">
+        ${item.status === 'in_stock' ? `<span class="item-delete-btn" onclick="window.inventoryComp.deleteItem('${item.id}')">🗑️</span>` : ''}
         <div class="item-icon-box">${icon}</div>
         <div class="item-details">
           <div class="item-name">${item.name}${hasMultipleQty ? ` <span style="color: var(--text-secondary); font-weight: 600;">x${qty}</span>` : ''}</div>
@@ -257,17 +258,14 @@ class InventoryComponent {
 
           ${item.status === 'in_stock' ? `
             <div class="item-actions">
-              <button class="btn btn-green btn-sm" onclick="window.posComp.openQuickSaleModal('${item.id}')">
+              <button class="btn btn-green btn-sm item-action-btn" onclick="window.posComp.openQuickSaleModal('${item.id}')">
                 ⚡ Sell
               </button>
-              <button class="btn btn-secondary btn-sm" onclick="window.tradeComp.addToTrade('${item.id}')">
+              <button class="btn btn-secondary btn-sm item-action-btn" onclick="window.tradeComp.addToTrade('${item.id}')">
                 🔄 Trade
               </button>
-              <button class="btn btn-secondary btn-sm" onclick="window.inventoryComp.openRestockModal('${item.id}')">
+              <button class="btn btn-secondary btn-sm item-action-btn" onclick="window.inventoryComp.openRestockModal('${item.id}')">
                 📥 Restock
-              </button>
-              <button class="btn btn-secondary btn-sm" style="color: var(--accent-red);" onclick="window.inventoryComp.deleteItem('${item.id}')">
-                🗑️
               </button>
             </div>
           ` : `

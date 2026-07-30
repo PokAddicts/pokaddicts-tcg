@@ -89,8 +89,8 @@ class CardSearchUI {
 
     dropdown.style.display = 'block';
     dropdown.innerHTML = localMatches.length > 0
-      ? this.renderRows(localMatches) + `<div class="card-search-empty">Searching PokeWallet for more...</div>`
-      : `<div class="card-search-empty">Searching PokeWallet directly...</div>`;
+      ? this.renderRows(localMatches) + `<div class="card-search-empty">Searching for more...</div>`
+      : `<div class="card-search-empty">Searching...</div>`;
 
     if (!window.pokeWalletClient || !window.pokeWalletClient.configured) {
       if (localMatches.length === 0) {

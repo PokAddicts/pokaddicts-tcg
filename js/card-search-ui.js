@@ -52,12 +52,18 @@ class CardSearchUI {
   }
 
   renderRows(cards) {
-    return cards.map(c => `
+    return cards.map(c => {
+      // TCGdex's Japanese catalog inconsistently stores cards under their
+      // native-script name - translate back to English for display, or
+      // showing raw Japanese text leaves no way to tell which card it is.
+      const displayName = window.cardCatalog.translateJapaneseName(c.name) || c.name;
+      return `
       <div class="card-search-row" onclick="window.cardSearchUI.selectCard('${c.id}')">
-        <div class="card-search-row-name">${this.formatCardTitle(c.name, c.number)}</div>
+        <div class="card-search-row-name">${this.formatCardTitle(displayName, c.number)}</div>
         <div class="card-search-row-meta">${c.set}${c.language ? ' • ' + c.language.toUpperCase() : ''}</div>
       </div>
-    `).join('');
+    `;
+    }).join('');
   }
 
   // TCGdex's brief search results only carry { id, localId, name, image } -
@@ -110,8 +116,19 @@ class CardSearchUI {
     // a live search when local has NOTHING, supplement whenever local
     // results are thin, merge the two, and re-rank together (so the best
     // number/name match wins regardless of which source it came from).
+    // If a number was typed, this fast path only fires when one of the
+    // local matches actually has that exact number - a pile of same-named
+    // but wrong-numbered English matches (e.g. several "Magikarp" cards,
+    // none of them #080) shouldn't short-circuit past the live/Japanese
+    // fallback below, which is what would actually find the right card.
     const LOCAL_RESULT_THRESHOLD = 5;
-    if (localMatches.length >= LOCAL_RESULT_THRESHOLD) {
+    const queryNumberPart = window.cardCatalog.parseCardQuery(query).numberPart;
+    const queryNum = queryNumberPart ? parseInt(queryNumberPart, 10) : null;
+    const hasExactNumberMatch = !queryNum || localMatches.some(c => {
+      const leadingDigits = (c.number || '').toString().match(/^0*(\d+)/);
+      return leadingDigits && parseInt(leadingDigits[1], 10) === queryNum;
+    });
+    if (localMatches.length >= LOCAL_RESULT_THRESHOLD && hasExactNumberMatch) {
       dropdown.style.display = 'block';
       dropdown.innerHTML = this.renderRows(localMatches);
       return;
@@ -136,7 +153,20 @@ class CardSearchUI {
 
       const merged = [...localMatches];
       liveCards.forEach(lc => { if (!merged.some(m => m.id === lc.id)) merged.push(lc); });
-      const ranked = window.cardCatalog.rankCards(merged, query).slice(0, 15);
+      let ranked = window.cardCatalog.rankCards(merged, query).slice(0, 15);
+
+      // TCGdex's Japanese catalog inconsistently stores cards under their
+      // native-script name rather than an English one (e.g. Magikarp #080
+      // is "コイキング"), so typing the English name/number never matches it
+      // through the English-only search above - try the Japanese catalog
+      // too (strict number+name match, same logic the scanner uses) when
+      // the query includes a number and the English search came up thin.
+      const { namePart, numberPart } = window.cardCatalog.parseCardQuery(query);
+      if (ranked.length < 5 && numberPart) {
+        const nameHints = [namePart, window.cardCatalog.translateEnglishToJapanese(namePart)].filter(Boolean);
+        const jpMatches = await window.cardCatalog.findJapaneseMatches(numberPart, nameHints, 5);
+        jpMatches.forEach(m => { if (!ranked.some(r => r.id === m.id)) ranked.push(m); });
+      }
 
       if (ranked.length === 0) {
         dropdown.innerHTML = `<div class="card-search-empty">No matches found - type your own details below.</div>`;
@@ -160,13 +190,18 @@ class CardSearchUI {
     const card = window.cardCatalog.getCardById(cardId);
     if (!card) return;
 
+    // Translate back to English for both display AND what actually gets
+    // stored - a raw Japanese-script name saved as the inventory item's
+    // name would be just as unreadable later as it was in the dropdown.
+    const displayName = window.cardCatalog.translateJapaneseName(card.name) || card.name;
+
     if (preview) {
       preview.style.display = 'block';
       preview.innerHTML = `
         <div style="display: flex; gap: 12px; align-items: center;">
           <div id="card-search-image-slot" style="width: 60px; flex-shrink: 0;"></div>
           <div style="flex: 1; min-width: 0;">
-            <div style="font-weight: 700; color: var(--text-primary);">${this.formatCardTitle(card.name, card.number)}</div>
+            <div style="font-weight: 700; color: var(--text-primary);">${this.formatCardTitle(displayName, card.number)}</div>
             <div style="font-size: 0.75rem; color: var(--text-secondary);">${card.set}${card.language ? ' • ' + card.language.toUpperCase() : ''}</div>
             <div id="card-search-price-line" style="font-size: 0.82rem; color: var(--accent-gold); font-weight: 700; margin-top: 4px;">Looking up card details...</div>
           </div>
@@ -182,7 +217,7 @@ class CardSearchUI {
       // Include the card number in the stored name (e.g. "Dark Houndoom
       // #5") so it shows up that way everywhere the item appears later -
       // not just in this confirm preview.
-      name: this.formatCardTitle(card.name, card.number),
+      name: this.formatCardTitle(displayName, card.number),
       set: card.set,
       marketValue: 0,
       catalogCardId: card.id

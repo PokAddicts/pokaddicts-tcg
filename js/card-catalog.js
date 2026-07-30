@@ -297,6 +297,81 @@ class CardCatalog {
     return matches.slice(0, limit);
   }
 
+  // Looks for a known Japanese species name as a substring of the given
+  // text, returning the raw Japanese text itself (not translated) - used
+  // to build a query that can actually match a Japanese-edition catalog
+  // entry, since those carry their own native-script name rather than an
+  // English translation.
+  findJapaneseSpeciesMatch(text) {
+    if (!window.POKEMON_JP_NAMES) return null;
+
+    let bestMatch = null;
+    for (const jpName in window.POKEMON_JP_NAMES) {
+      if (text.includes(jpName) && (!bestMatch || jpName.length > bestMatch.length)) {
+        bestMatch = jpName;
+      }
+    }
+    return bestMatch;
+  }
+
+  // Looks for a known Japanese species name as a substring of the given
+  // text and returns the matching official English name. Covers Gen 1-7 -
+  // a species not in the table (e.g. very recent Gen 8/9 prints) falls
+  // back to using the raw text as-is.
+  translateJapaneseName(text) {
+    const bestMatch = this.findJapaneseSpeciesMatch(text);
+    return bestMatch ? window.POKEMON_JP_NAMES[bestMatch] : null;
+  }
+
+  // Reverse of POKEMON_JP_NAMES (English -> Japanese), built once on first
+  // use - lets an English guess be translated into a plausible Japanese
+  // name, used as a permissive hint (not a filter) when searching TCGdex's
+  // Japanese catalog, since many of its entries only have their native-
+  // script name filled in rather than an English one.
+  translateEnglishToJapanese(name) {
+    if (!name || !window.POKEMON_JP_NAMES) return null;
+    if (!this._enToJpMap) {
+      this._enToJpMap = {};
+      for (const jpName in window.POKEMON_JP_NAMES) {
+        const en = window.POKEMON_JP_NAMES[jpName].toLowerCase();
+        if (!this._enToJpMap[en]) this._enToJpMap[en] = jpName;
+      }
+    }
+    return this._enToJpMap[name.toLowerCase()] || null;
+  }
+
+  // Strict number+name-hint search against TCGdex's Japanese catalog: a
+  // card only counts as a match if its name actually matches one of the
+  // hints (an English guess, or its reverse-translated Japanese guess) -
+  // a card number is reused across dozens of unrelated species within the
+  // Japanese card pool (~50+ completely different Pokemon all share
+  // number "080" alone), so a same-numbered-but-wrong-species result is
+  // worse than no result at all. Local cache first, live fallback. Shared
+  // by both the scanner (js/scanner.js) and the manual card search widget
+  // (js/card-search-ui.js), so typing a Japanese card's English name into
+  // Intake/Trade search works the same way scanning it does.
+  async findJapaneseMatches(number, nameHints, limit = 6) {
+    if (!number) return [];
+    const hints = nameHints.filter(Boolean);
+    if (hints.length === 0) return [];
+
+    let matches = this.searchLocalByLanguage(number, 'ja', limit, hints);
+
+    if (matches.length === 0 && window.tcgdexClient?.configured) {
+      try {
+        const results = await window.tcgdexClient.searchCards(number, { limit: 20, lang: 'ja' });
+        const liveCards = results.map(r => window.cardSearchUI.normalizeLiveSearchResult(r, 'ja'));
+        await this.cacheLiveResults(liveCards);
+        const lowerHints = hints.map(h => h.toLowerCase());
+        matches = liveCards.filter(c => lowerHints.some(h => (c.name || '').toLowerCase().includes(h))).slice(0, limit);
+      } catch (err) {
+        console.warn('Live Japanese-edition search failed:', err);
+      }
+    }
+
+    return matches;
+  }
+
   // Cross-references a set id against the full sets list (fetched once, up
   // front, before the much slower per-card sync even starts) to find that
   // set's language/name/card total - works even when full card-level sync

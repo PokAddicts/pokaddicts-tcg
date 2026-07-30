@@ -432,48 +432,19 @@ class PokAddictsScanner {
     // what Gemini thought the language was.
     const wantJapanese = this.scanLanguage === 'jap' || primary.isJapanese || matches.length === 0;
     if (wantJapanese && primary.number) {
-      const nameHints = [primary.name, this.translateEnglishToJapanese(primary.name)].filter(Boolean);
-      const jpMatches = await this.findJapaneseMatches(primary.number, nameHints, 6);
+      const nameHints = [primary.name, window.cardCatalog.translateEnglishToJapanese(primary.name)].filter(Boolean);
+      const jpMatches = await window.cardCatalog.findJapaneseMatches(primary.number, nameHints, 6);
 
       jpMatches.forEach(m => {
         if (!candidates.some(c => c.catalogCardId === m.id)) {
           // Translate back to English for display - showing raw Japanese
           // script left no way to tell which card was actually suggested.
-          candidates.unshift({ name: this.translateJapaneseName(m.name) || m.name, set: m.set, number: m.number, catalogCardId: m.id, source: 'japanese' });
+          candidates.unshift({ name: window.cardCatalog.translateJapaneseName(m.name) || m.name, set: m.set, number: m.number, catalogCardId: m.id, source: 'japanese' });
         }
       });
     }
 
     return candidates;
-  }
-
-  // Strict number+name-hint search against TCGdex's Japanese catalog: a
-  // card only counts as a match if its name actually matches one of the
-  // hints (Gemini's raw English guess, or a reverse-translated Japanese
-  // guess) - a card number is reused across dozens of unrelated species
-  // within the Japanese card pool (~50+ completely different Pokemon all
-  // share number "080" alone), so a same-numbered-but-wrong-species result
-  // is worse than no result at all. Local cache first, live fallback.
-  async findJapaneseMatches(number, nameHints, limit = 6) {
-    if (!number) return [];
-    const hints = nameHints.filter(Boolean);
-    if (hints.length === 0) return [];
-
-    let matches = window.cardCatalog ? window.cardCatalog.searchLocalByLanguage(number, 'ja', limit, hints) : [];
-
-    if (matches.length === 0 && window.tcgdexClient?.configured) {
-      try {
-        const results = await window.tcgdexClient.searchCards(number, { limit: 20, lang: 'ja' });
-        const liveCards = results.map(r => window.cardSearchUI.normalizeLiveSearchResult(r, 'ja'));
-        await window.cardCatalog.cacheLiveResults(liveCards);
-        const lowerHints = hints.map(h => h.toLowerCase());
-        matches = liveCards.filter(c => lowerHints.some(h => (c.name || '').toLowerCase().includes(h))).slice(0, limit);
-      } catch (err) {
-        console.warn('Live Japanese-edition search failed:', err);
-      }
-    }
-
-    return matches;
   }
 
   sourceLabel(source) {
@@ -600,7 +571,7 @@ class PokAddictsScanner {
     // translations (e.g. "フシギダネ" -> "Bulbasaur" isn't a translation
     // of the text at all) - look it up in a real species table instead.
     const hasJapanese = /[぀-ヿ一-鿿]/.test(suggestion.name);
-    const translatedTo = hasJapanese ? this.translateJapaneseName(suggestion.name) : null;
+    const translatedTo = hasJapanese ? window.cardCatalog.translateJapaneseName(suggestion.name) : null;
     const finalName = translatedTo || suggestion.name;
 
     let catalogCardId = suggestion.catalogCardId || '';
@@ -732,55 +703,17 @@ class PokAddictsScanner {
     }
 
     if (matches.length === 0 && number) {
-      const nameHints = [name, this.translateEnglishToJapanese(name)].filter(Boolean);
-      matches = await this.findJapaneseMatches(number, nameHints, 3);
+      const nameHints = [name, window.cardCatalog.translateEnglishToJapanese(name)].filter(Boolean);
+      matches = await window.cardCatalog.findJapaneseMatches(number, nameHints, 3);
     }
 
     return matches[0] || null;
   }
 
-  // Finds the longest known Japanese species name that appears as a
-  // substring of the given text, returning the raw Japanese text itself
-  // (not translated) - used to build a query that can actually match a
-  // Japanese-edition catalog entry, since those carry their own
-  // native-script name rather than an English translation.
-  findJapaneseSpeciesMatch(text) {
-    if (!window.POKEMON_JP_NAMES) return null;
-
-    let bestMatch = null;
-    for (const jpName in window.POKEMON_JP_NAMES) {
-      if (text.includes(jpName) && (!bestMatch || jpName.length > bestMatch.length)) {
-        bestMatch = jpName;
-      }
-    }
-    return bestMatch;
-  }
-
-  // Looks for a known Japanese species name as a substring of the given
-  // text and returns the matching official English name. Covers Gen 1-7 -
-  // a species not in the table (e.g. very recent Gen 8/9 prints) falls
-  // back to using the raw text as-is.
-  translateJapaneseName(text) {
-    const bestMatch = this.findJapaneseSpeciesMatch(text);
-    return bestMatch ? window.POKEMON_JP_NAMES[bestMatch] : null;
-  }
-
-  // Reverse of POKEMON_JP_NAMES (English -> Japanese), built once on first
-  // use - lets Gemini's English guess be translated into a plausible
-  // Japanese name, used as a permissive hint (not a filter) when searching
-  // TCGdex's Japanese catalog, since many of its entries only have their
-  // native-script name filled in rather than an English one.
-  translateEnglishToJapanese(name) {
-    if (!name || !window.POKEMON_JP_NAMES) return null;
-    if (!this._enToJpMap) {
-      this._enToJpMap = {};
-      for (const jpName in window.POKEMON_JP_NAMES) {
-        const en = window.POKEMON_JP_NAMES[jpName].toLowerCase();
-        if (!this._enToJpMap[en]) this._enToJpMap[en] = jpName;
-      }
-    }
-    return this._enToJpMap[name.toLowerCase()] || null;
-  }
+  // Japanese name lookup/translation (findJapaneseSpeciesMatch,
+  // translateJapaneseName, translateEnglishToJapanese, findJapaneseMatches)
+  // now lives on window.cardCatalog - shared with card-search-ui.js's
+  // manual search widget, not scanner-specific.
 
   // --- Graded slabs: manual grading/cost/market entry ---
 
@@ -838,7 +771,7 @@ class PokAddictsScanner {
     const market = parseFloat(document.getElementById('scan-cert-market')?.value) || 0;
 
     const hasJapanese = /[぀-ヿ一-鿿]/.test(s.name);
-    const translatedTo = hasJapanese ? this.translateJapaneseName(s.name) : null;
+    const translatedTo = hasJapanese ? window.cardCatalog.translateJapaneseName(s.name) : null;
     const finalName = translatedTo || s.name;
 
     this.scanList.push({

@@ -243,9 +243,9 @@ class PokAddictsScanner {
   // Fetches and caches thumbnails for chips that don't have one yet.
   async loadScannedChipThumbnails() {
     for (const entry of this.scanList) {
-      if (entry.imageUrl || !entry.catalogCardId || !window.pokeWalletClient?.configured) continue;
+      if (entry.imageUrl || !entry.catalogCardId || !window.tcgdexClient?.configured) continue;
       try {
-        const url = await window.pokeWalletClient.getImageBlobUrl(entry.catalogCardId, 'low');
+        const url = await window.tcgdexClient.getImageBlobUrl(entry.catalogCardId, 'low');
         if (!url) continue;
         entry.imageUrl = url;
         const el = document.getElementById(`scan-chip-thumb-${entry.tempId}`);
@@ -261,10 +261,10 @@ class PokAddictsScanner {
   async loadPendingThumbnail() {
     if (this.view !== 'suggestions' || this.suggestionsExpanded) return;
     const top = this.pendingSuggestions[0];
-    if (!top || !top.catalogCardId || !window.pokeWalletClient?.configured) return;
+    if (!top || !top.catalogCardId || !window.tcgdexClient?.configured) return;
 
     try {
-      const url = await window.pokeWalletClient.getImageBlobUrl(top.catalogCardId, 'low');
+      const url = await window.tcgdexClient.getImageBlobUrl(top.catalogCardId, 'low');
       const el = document.getElementById('scanner-result-thumb-0');
       if (url && el) el.innerHTML = `<img src="${url}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 8px;" alt="${top.name}">`;
     } catch (err) {
@@ -372,7 +372,7 @@ class PokAddictsScanner {
   // among the top ranked results even if the guess wasn't exact, giving
   // several real candidates instead of one possibly-wrong answer. The raw
   // Gemini guess is kept as a fallback option too, in case the actual
-  // card isn't in the PokeWallet catalog yet.
+  // card isn't in the TCGdex catalog yet.
   // Wrapped in an outer try/catch so that any unexpected failure here
   // (a bad response shape, a rate-limited request that throws somewhere
   // not already guarded, etc.) still falls back to Gemini's raw guess
@@ -389,28 +389,28 @@ class PokAddictsScanner {
 
   async _buildCandidateListInner(primary) {
     const query = [primary.name, primary.number].filter(Boolean).join(' ').trim();
-    // Local search is instant; a live PokeWallet call is not, and the free
-    // tier's rate limit (100/hour) is shared across the whole scanning
-    // session - so only reach for it when local is genuinely sparse (< 5),
-    // not just short of the full display count. Showing up to 8 results
-    // (below) only needs the network when local truly doesn't have them.
+    // Local search is instant; a live TCGdex call is not - only reach for
+    // it when local is genuinely sparse (< 5), not just short of the full
+    // display count. TCGdex has no rate limit, but there's no reason to
+    // add network latency to every scan when local usually already has
+    // plenty of candidates.
     let matches = window.cardCatalog ? window.cardCatalog.searchLocal(query, 12) : [];
 
-    if (matches.length < 5 && window.pokeWalletClient?.configured) {
+    if (matches.length < 5 && window.tcgdexClient?.configured) {
       try {
-        const res = await window.pokeWalletClient.searchCards(query, { limit: 12 });
-        const liveCards = (res.results || []).map(r => window.cardSearchUI.normalizeLiveSearchResult(r));
+        const results = await window.tcgdexClient.searchCards(query, { limit: 12, lang: 'en' });
+        const liveCards = results.map(r => window.cardSearchUI.normalizeLiveSearchResult(r, 'en'));
         await window.cardCatalog.cacheLiveResults(liveCards);
         const merged = [...matches];
         liveCards.forEach(lc => { if (!merged.some(m => m.id === lc.id)) merged.push(lc); });
         matches = window.cardCatalog.rankCards(merged, query);
       } catch (err) {
-        console.warn('PokeWallet live search fallback failed:', err);
+        console.warn('TCGdex live search fallback failed:', err);
       }
     }
 
     const candidates = matches.slice(0, 8).map(m => ({
-      name: m.name, set: m.set, number: m.number, catalogCardId: m.id, source: 'pokewallet'
+      name: m.name, set: m.set, number: m.number, catalogCardId: m.id, source: 'tcgdex'
     }));
 
     if (candidates.length === 0 || candidates[0].name.toLowerCase() !== (primary.name || '').toLowerCase()) {
@@ -418,30 +418,27 @@ class PokAddictsScanner {
     }
 
     // Card NAMES are in English regardless of the set's language (verified
-    // against PokeWallet's own data - a card from a Japanese-only set is
-    // still named e.g. "Pikachu", not Japanese text), so the query itself
-    // stays in English - Gemini already reads the species name off the
-    // card directly, so no separate OCR/translation pass is needed here
-    // like the old CardSight+Tesseract combo required. Only the candidate
-    // pool gets narrowed to Japanese-language sets, whenever Japanese is
-    // in play (Gemini read Japanese text on the card, or the language
-    // toggle is set to JP).
+    // against TCGdex's own data - a card from a Japanese-only set is still
+    // named e.g. "Pikachu", not Japanese text), so the query itself stays
+    // in English - Gemini already reads the species name off the card
+    // directly, so no separate OCR/translation pass is needed here like
+    // the old CardSight+Tesseract combo required. Only the candidate pool
+    // gets narrowed to Japanese-language sets, whenever Japanese is in
+    // play (Gemini read Japanese text on the card, or the language toggle
+    // is set to JP).
     const wantJapanese = this.scanLanguage === 'jap' || primary.isJapanese;
     if (wantJapanese && primary.name) {
       const jpQuery = [primary.name, primary.number].filter(Boolean).join(' ').trim();
-      let jpMatches = window.cardCatalog ? window.cardCatalog.searchLocalByLanguage(jpQuery, 'jap', 4) : [];
+      let jpMatches = window.cardCatalog ? window.cardCatalog.searchLocalByLanguage(jpQuery, 'ja', 4) : [];
 
-      // Local sync covers under half of PokeWallet's ~460 Japanese sets
-      // at any given time (it's a slow, resumable background import) -
-      // a live search filtered to Japanese-tagged sets fills the gap for
-      // sets the device hasn't synced yet.
-      if (jpMatches.length === 0 && window.pokeWalletClient?.configured) {
+      // Live search filtered to the Japanese endpoint fills the gap for
+      // sets the local device hasn't synced yet.
+      if (jpMatches.length === 0 && window.tcgdexClient?.configured) {
         try {
-          const res = await window.pokeWalletClient.searchCards(jpQuery, { limit: 15 });
-          const liveCards = (res.results || []).map(r => window.cardSearchUI.normalizeLiveSearchResult(r));
+          const results = await window.tcgdexClient.searchCards(jpQuery, { limit: 15, lang: 'ja' });
+          const liveCards = results.map(r => window.cardSearchUI.normalizeLiveSearchResult(r, 'ja'));
           await window.cardCatalog.cacheLiveResults(liveCards);
-          const jpLiveCards = liveCards.filter(c => (c.language || '').toLowerCase().startsWith('jap'));
-          jpMatches = window.cardCatalog.rankCards(jpLiveCards, jpQuery).slice(0, 4);
+          jpMatches = window.cardCatalog.rankCards(liveCards, jpQuery).slice(0, 4);
         } catch (err) {
           console.warn('Live Japanese-edition search failed:', err);
         }
@@ -586,14 +583,18 @@ class PokAddictsScanner {
 
     let catalogCardId = suggestion.catalogCardId || '';
     let setName = suggestion.set || '';
+    let cardLang = 'en';
 
     if (!catalogCardId) {
       window.app.showToast(`Looking up price for ${finalName}...`);
-      const match = await this.resolvePokeWalletMatch(finalName, suggestion.number);
+      const match = await this.resolveCatalogMatch(finalName, suggestion.number);
       if (match) {
         catalogCardId = match.id;
         setName = match.set || setName;
+        cardLang = match.language || 'en';
       }
+    } else {
+      cardLang = window.cardCatalog?.getCardById(catalogCardId)?.language || 'en';
     }
 
     if (!catalogCardId) {
@@ -605,10 +606,10 @@ class PokAddictsScanner {
 
     let variants = [];
     try {
-      const detail = await window.pokeWalletClient.getCard(catalogCardId);
-      variants = window.pokeWalletClient.extractAllVariantsSGD(detail);
+      const detail = await window.tcgdexClient.getCard(catalogCardId, cardLang);
+      variants = window.tcgdexClient.extractAllVariantsSGD(detail);
     } catch (err) {
-      console.warn('PokeWallet price fetch failed:', err);
+      console.warn('TCGdex price fetch failed:', err);
     }
 
     if (variants.length <= 1) {
@@ -673,22 +674,22 @@ class PokAddictsScanner {
     this.renderDynamicSectionOnly();
   }
 
-  // Finds a PokeWallet catalog match for a confirmed card name (+ optional
+  // Finds a TCGdex catalog match for a confirmed card name (+ optional
   // number) - local cache first, live search fallback.
-  async resolvePokeWalletMatch(name, number) {
+  async resolveCatalogMatch(name, number) {
     const query = [name, number].filter(Boolean).join(' ').trim();
     if (!query) return null;
 
     let matches = window.cardCatalog ? window.cardCatalog.searchLocal(query, 5) : [];
 
-    if (matches.length === 0 && window.pokeWalletClient?.configured) {
+    if (matches.length === 0 && window.tcgdexClient?.configured) {
       try {
-        const res = await window.pokeWalletClient.searchCards(query, { limit: 5 });
-        const liveCards = (res.results || []).map(r => window.cardSearchUI.normalizeLiveSearchResult(r));
+        const results = await window.tcgdexClient.searchCards(query, { limit: 5, lang: 'en' });
+        const liveCards = results.map(r => window.cardSearchUI.normalizeLiveSearchResult(r, 'en'));
         await window.cardCatalog.cacheLiveResults(liveCards);
         matches = window.cardCatalog.rankCards(liveCards, query);
       } catch (err) {
-        console.warn('PokeWallet live search fallback failed:', err);
+        console.warn('TCGdex live search fallback failed:', err);
       }
     }
 

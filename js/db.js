@@ -1061,11 +1061,11 @@ class PokAddictsDB {
 
   // Once per calendar day (best-effort), refreshes marketValue for every
   // in-stock item that was added via the card catalog search, so listed
-  // prices stay current without manual re-entry. Paced with a delay
-  // between requests to stay well under the PokeWallet free-tier rate
-  // limit even if run alongside catalog sync.
+  // prices stay current without manual re-entry. Paced with a small delay
+  // between requests to be a good citizen of TCGdex's free/keyless API
+  // even if run alongside catalog sync.
   async refreshInventoryPricesIfDue() {
-    if (!window.pokeWalletClient?.configured) return;
+    if (!window.tcgdexClient?.configured) return;
 
     const today = new Date().toISOString().split('T')[0];
     if (this.settings.lastPriceRefreshDate === today) return;

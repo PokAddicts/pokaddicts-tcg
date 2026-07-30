@@ -1,72 +1,58 @@
 /* ==========================================================================
    PokAddicts - Local Card Catalog
-   A one-time (resumable) bulk import of the PokeWallet card database -
-   names, sets, numbers, and language - across ALL languages (English,
-   Japanese, German, etc. are distinct sets with their own card pools, not
-   just localized art), stored in IndexedDB and mirrored in memory so
-   Intake/Trade search is instant and works offline at a tradeshow.
+   A one-time (resumable) bulk import of the TCGdex card database - names,
+   sets, numbers, and language (English + Japanese, matching the app's
+   scan-language toggle - see js/tcgdex-client.js for why not all 12
+   languages TCGdex supports), stored in IndexedDB and mirrored in memory
+   so Intake/Trade search is instant and works offline at a tradeshow.
 
    When Supabase is configured, the catalog and sync progress are shared
    across every device (see the `cards` / `catalog_sync_state` tables in
    supabase/schema.sql, NOT scoped by room_code since card data is
-   universal): once any phone has fetched a card from PokeWallet, every
-   other phone just reads it back from Supabase instead of re-fetching it.
+   universal): once any phone has fetched a card from TCGdex, every other
+   phone just reads it back from Supabase instead of re-fetching it.
    Without Supabase configured, this falls back to a fully local per-device
-   sync against PokeWallet directly.
+   sync against TCGdex directly.
 
    Only text is bulk-imported; images and live prices are fetched on demand
-   (when a specific card is selected, or during the daily refresh) since
-   PokeWallet's free tier is rate-limited.
+   (when a specific card is selected, or during the daily refresh) to keep
+   the initial sync itself light and fast.
    ========================================================================== */
 
 const CARD_CATALOG_DB_NAME = 'pokaddicts_card_catalog';
 const CARD_CATALOG_STORE = 'cards';
-// Bumped to v2 so any in-progress local-only sync restarts with newest-
-// sets-first ordering (see parseSetReleaseDate) instead of continuing in
-// whatever order /sets happened to return the first time.
-const CARD_CATALOG_SYNC_STATE_KEY = 'pokaddicts_catalog_sync_state_v2';
+// Bumped to v3 for the PokeWallet -> TCGdex migration - card ids, number
+// formats, and the sets-per-language shape are all different now, so any
+// old in-progress sync state would be nonsensical to resume from.
+const CARD_CATALOG_SYNC_STATE_KEY = 'pokaddicts_catalog_sync_state_v3';
 
-// Parses PokeWallet's "31st March, 2023" style release_date strings into
-// a sortable timestamp (0 if unparseable).
-function parseSetReleaseDate(str) {
-  if (!str) return 0;
-  const cleaned = str.replace(/(\d+)(st|nd|rd|th)/, '$1');
-  const match = cleaned.match(/(\d+)\s+(\w+),?\s+(\d+)/);
-  if (match) {
-    const [, day, month, year] = match;
-    const parsed = new Date(`${month} ${day}, ${year}`);
-    if (!isNaN(parsed.getTime())) return parsed.getTime();
-  }
-  const fallback = new Date(str);
-  return isNaN(fallback.getTime()) ? 0 : fallback.getTime();
-}
+// Small delay between per-set sync requests - TCGdex has no hard rate
+// limit, but their own FAQ asks callers to "be considerate" rather than
+// hammering the free community-run API, and each request here already
+// pulls a whole set's cards in one shot (no pagination needed).
+const SYNC_REQUEST_DELAY_MS = 150;
 
-// Delay between paginated sync requests. Keeps bulk import comfortably
-// under the free tier's 100/hour cap even while other lookups (live price
-// confirms, daily refresh) happen alongside it. A full multi-language
-// catalog has a lot of sets, so this can take a while - it resumes
-// automatically across app sessions (and, with Supabase configured,
-// across every device) rather than needing to finish in one sitting.
-const SYNC_REQUEST_DELAY_MS = 45000;
-
-function normalizeCatalogCard(raw, set) {
-  const info = raw.card_info || {};
+// raw: TCGdex's brief per-card shape from a set's card list -
+// { id, localId, name, image }. set: { id, name, total } for the
+// enclosing set. lang: 'en' | 'ja'.
+function normalizeCatalogCard(raw, set, lang) {
   return {
     id: raw.id,
-    name: info.name || 'Unknown Card',
-    set: info.set_name || set.name || '',
-    setId: set.id || info.set_id || '',
-    number: info.card_number || '',
-    language: set.language || ''
+    name: raw.name || 'Unknown Card',
+    set: set.name || '',
+    setId: set.id || '',
+    number: set.total ? `${raw.localId}/${set.total}` : (raw.localId || ''),
+    language: lang,
+    image: raw.image || ''
   };
 }
 
 function cardRowFromCatalogCard(c) {
-  return { id: c.id, name: c.name, set_name: c.set, set_id: c.setId, card_number: c.number, language: c.language, low_quality: !!c.lowQuality };
+  return { id: c.id, name: c.name, set_name: c.set, set_id: c.setId, card_number: c.number, language: c.language, image: c.image || '', low_quality: !!c.lowQuality };
 }
 
 function catalogCardFromRow(r) {
-  return { id: r.id, name: r.name, set: r.set_name || '', setId: r.set_id || '', number: r.card_number || '', language: r.language || '', lowQuality: !!r.low_quality };
+  return { id: r.id, name: r.name, set: r.set_name || '', setId: r.set_id || '', number: r.card_number || '', language: r.language || '', image: r.image || '', lowQuality: !!r.low_quality };
 }
 
 class CardCatalog {
@@ -291,17 +277,18 @@ class CardCatalog {
     return this.rankCards(filtered, query).slice(0, limit);
   }
 
-  // Cross-references a card's set_id against the full /sets list (fetched
-  // once, up front, before the much slower per-card sync even starts) to
-  // find that set's language - works even when full card-level sync is
-  // nowhere near that set yet, which is why this is used to tag live
-  // search results with a language instead of relying on local card sync.
-  getLanguageForSetId(setId) {
-    if (!this._setLanguageMap) {
-      this._setLanguageMap = new Map();
-      (this.syncState.sets || []).forEach(s => this._setLanguageMap.set(String(s.id), s.language));
+  // Cross-references a set id against the full sets list (fetched once, up
+  // front, before the much slower per-card sync even starts) to find that
+  // set's language/name/card total - works even when full card-level sync
+  // is nowhere near that set yet, which is why this is used to enrich live
+  // TCGdex search results (which only return id/localId/name/image, no set
+  // name or total) without an extra network round trip.
+  getSetInfoById(setId) {
+    if (!this._setInfoMap) {
+      this._setInfoMap = new Map();
+      (this.syncState.sets || []).forEach(s => this._setInfoMap.set(String(s.id), s));
     }
-    return this._setLanguageMap.get(String(setId)) || '';
+    return this._setInfoMap.get(String(setId)) || null;
   }
 
   getCardById(id) {
@@ -375,11 +362,13 @@ class CardCatalog {
     }
   }
 
-  // Resumable bulk import: walks every set across every language. Safe to
-  // stop (close the tab) and resume later - progress is saved after every
-  // page, shared across devices when Supabase is configured.
+  // Resumable bulk import: walks every set across English + Japanese.
+  // Safe to stop (close the tab) and resume later - progress is saved
+  // after every set, shared across devices when Supabase is configured.
+  // Each set is fetched in ONE request (TCGdex returns a whole set's
+  // cards in its set-detail response, no pagination loop needed).
   async syncCatalog(onProgress) {
-    if (!window.pokeWalletClient.configured || this.syncing) return;
+    if (!window.tcgdexClient.configured || this.syncing) return;
     await this.ready;
 
     if (this.syncState.status === 'complete') return;
@@ -390,40 +379,33 @@ class CardCatalog {
 
     try {
       if (!this.syncState.sets) {
-        const setsRes = await window.pokeWalletClient.listSets();
-        this.syncState.sets = (setsRes.data || setsRes.sets || [])
-          .map(s => ({ id: s.set_id, name: s.name, language: s.language, releaseDate: s.release_date }))
-          // Newest sets first, so recently released cards become
-          // searchable quickly instead of waiting for a full alphabetical
-          // sweep of every language's entire catalog.
-          .sort((a, b) => parseSetReleaseDate(b.releaseDate) - parseSetReleaseDate(a.releaseDate));
+        const languages = ['en', 'ja'];
+        let allSets = [];
+        for (const lang of languages) {
+          const setsRes = await window.tcgdexClient.listSets(lang);
+          allSets = allSets.concat((setsRes || []).map(s => ({
+            id: s.id, name: s.name, language: lang, total: s.cardCount?.total || 0
+          })));
+        }
+        this.syncState.sets = allSets;
         this.syncState.setIndex = 0;
-        this.syncState.page = 1;
         this.saveSyncState();
       }
 
       while (this.syncState.setIndex < this.syncState.sets.length) {
         const set = this.syncState.sets[this.syncState.setIndex];
 
-        const res = await window.pokeWalletClient.getSetCards(set.id, { page: this.syncState.page, limit: 200 });
+        const res = await window.tcgdexClient.getSetCards(set.id, set.language);
         const cardsRaw = res.cards || [];
-        const cards = cardsRaw.map(c => normalizeCatalogCard(c, set));
+        const total = res.cardCount?.total || set.total;
+        const cards = cardsRaw.map(c => normalizeCatalogCard(c, { id: set.id, name: res.name || set.name, total }, set.language));
 
         await this.saveCards(cards);
         this.cards.push(...cards);
         this.pushCardsToSupabase(cards);
         this.syncState.totalCards += cards.length;
 
-        const hasMore = res.pagination
-          ? this.syncState.page < res.pagination.total_pages
-          : cardsRaw.length === 200;
-
-        if (hasMore) {
-          this.syncState.page += 1;
-        } else {
-          this.syncState.setIndex += 1;
-          this.syncState.page = 1;
-        }
+        this.syncState.setIndex += 1;
         this.saveSyncState();
 
         if (onProgress) onProgress({ ...this.syncState, setName: set.name });
@@ -445,13 +427,14 @@ class CardCatalog {
   }
 
   // Live price lookup (in SGD) used during the daily inventory price
-  // refresh - the local catalog id IS the PokeWallet id, so this is a
-  // direct, unambiguous lookup.
+  // refresh - the local catalog id IS the TCGdex id, so this is a direct,
+  // unambiguous lookup once we know which language endpoint it lives on.
   async fetchLivePrice(cardId) {
-    if (!window.pokeWalletClient.configured) return { price: 0, source: null };
+    const card = this.getCardById(cardId);
+    const lang = card?.language || 'en';
     try {
-      const detail = await window.pokeWalletClient.getCard(cardId);
-      return window.pokeWalletClient.extractMarketPriceSGD(detail);
+      const detail = await window.tcgdexClient.getCard(cardId, lang);
+      return window.tcgdexClient.extractMarketPriceSGD(detail);
     } catch (err) {
       console.warn('Price lookup failed:', err);
       return { price: 0, source: null };

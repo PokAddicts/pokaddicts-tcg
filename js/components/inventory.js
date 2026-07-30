@@ -16,7 +16,7 @@ class InventoryComponent {
   // instead of just seeing a generic ✨ icon) - fires in the background
   // after the item list HTML is already in the DOM.
   async loadItemImages(items) {
-    if (!window.pokeWalletClient?.configured) return;
+    if (!window.tcgdexClient?.configured) return;
 
     for (const item of items) {
       if (item.type !== 'raw' || !item.catalogCardId) continue;
@@ -29,7 +29,7 @@ class InventoryComponent {
       }
 
       try {
-        const url = await window.pokeWalletClient.getImageBlobUrl(item.catalogCardId, 'low');
+        const url = await window.tcgdexClient.getImageBlobUrl(item.catalogCardId, 'low');
         if (!url) continue;
         this.imageUrlCache[item.catalogCardId] = url;
         const el = document.getElementById(elId);

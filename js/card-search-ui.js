@@ -33,9 +33,8 @@ class CardSearchUI {
     };
   }
 
-  // PokeWallet card names sometimes already embed the number (e.g.
-  // "Flareon ex - 202/187"), so blindly appending "#202/187" again would
-  // duplicate it - only append if it isn't already there.
+  // Defensive dedup: append the card number to its name for display,
+  // unless it's somehow already embedded in the name.
   formatCardTitle(name, number) {
     if (!number) return name || '';
     if ((name || '').includes(number)) return name;
@@ -61,19 +60,30 @@ class CardSearchUI {
     `).join('');
   }
 
-  normalizeLiveSearchResult(raw) {
-    const info = raw.card_info || {};
+  // TCGdex's brief search results only carry { id, localId, name, image } -
+  // no set name or card total, needed for the "8/102" number format. The
+  // set id is recoverable from the card id itself ("me05-001" -> "me05",
+  // since localId is always the trailing segment), then the full sets
+  // list (fetched once, up front, well before per-card sync catches up)
+  // fills in the name/total/language without an extra network call.
+  extractSetIdFromCardId(id, localId) {
+    if (!id || !localId) return '';
+    const suffix = `-${localId}`;
+    return id.endsWith(suffix) ? id.slice(0, -suffix.length) : id;
+  }
+
+  normalizeLiveSearchResult(raw, lang = 'en') {
+    const setId = this.extractSetIdFromCardId(raw.id, raw.localId);
+    const setInfo = window.cardCatalog ? window.cardCatalog.getSetInfoById(setId) : null;
+    const total = setInfo?.total || 0;
     return {
       id: raw.id,
-      name: info.name || 'Unknown Card',
-      set: info.set_name || '',
-      setId: info.set_id || '',
-      number: info.card_number || '',
-      // Live search results don't carry a language field of their own, but
-      // the full /sets list (with each set's language) is fetched up front
-      // well before per-card sync catches up, so this cross-reference
-      // works even for sets the local card cache hasn't reached yet.
-      language: window.cardCatalog ? window.cardCatalog.getLanguageForSetId(info.set_id) : ''
+      name: raw.name || 'Unknown Card',
+      set: setInfo?.name || '',
+      setId,
+      number: total ? `${raw.localId}/${total}` : (raw.localId || ''),
+      language: setInfo?.language || lang,
+      image: raw.image || ''
     };
   }
 
@@ -112,7 +122,7 @@ class CardSearchUI {
       ? this.renderRows(localMatches) + `<div class="card-search-empty">Searching for more...</div>`
       : `<div class="card-search-empty">Searching...</div>`;
 
-    if (!window.pokeWalletClient || !window.pokeWalletClient.configured) {
+    if (!window.tcgdexClient || !window.tcgdexClient.configured) {
       if (localMatches.length === 0) {
         dropdown.innerHTML = `<div class="card-search-empty">No catalog matches - type your own details below.</div>`;
       }
@@ -120,9 +130,8 @@ class CardSearchUI {
     }
 
     try {
-      const res = await window.pokeWalletClient.searchCards(query, { limit: 10 });
-      const results = res.results || [];
-      const liveCards = results.map(r => this.normalizeLiveSearchResult(r));
+      const results = await window.tcgdexClient.searchCards(query, { limit: 10 });
+      const liveCards = results.map(r => this.normalizeLiveSearchResult(r, 'en'));
       await window.cardCatalog.cacheLiveResults(liveCards);
 
       const merged = [...localMatches];
@@ -183,12 +192,12 @@ class CardSearchUI {
     // updating the preview the moment IT resolves - waiting for the
     // slower of the two to show either was the main cause of the
     // sluggish-feeling preview. If NEITHER ever turns up anything, this
-    // entry is likely one of PokeWallet's broken/duplicate rows - flag it
-    // so it sinks in future searches instead of cluttering results again.
+    // entry is likely a broken/duplicate catalog row - flag it so it
+    // sinks in future searches instead of cluttering results again.
     let gotImage = false;
     let gotPrice = false;
 
-    const imagePromise = window.pokeWalletClient.getImageBlobUrl(cardId, 'low')
+    const imagePromise = window.tcgdexClient.getImageBlobUrl(cardId, 'low')
       .then((imageUrl) => {
         if (!imageUrl) return;
         gotImage = true;
@@ -199,9 +208,9 @@ class CardSearchUI {
       })
       .catch((err) => console.warn('Card image fetch failed:', err));
 
-    const pricePromise = window.pokeWalletClient.getCard(cardId)
+    const pricePromise = window.tcgdexClient.getCard(cardId, card.language || 'en')
       .then((detail) => {
-        const { price, source } = window.pokeWalletClient.extractMarketPriceSGD(detail);
+        const { price, source } = window.tcgdexClient.extractMarketPriceSGD(detail);
         this.resolvedCard.marketValue = price;
         if (price > 0) gotPrice = true;
 

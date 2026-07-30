@@ -162,7 +162,9 @@ create index if not exists events_room_code_idx on events(room_code);
 -- Intake/Trade card search. NOT scoped by room_code, unlike everything
 -- else above - this is universal reference data (the same "Charizard ex
 -- #199" is the same row no matter which booth is asking), so every room
--- shares one copy instead of each re-fetching it from PokeWallet.
+-- shares one copy instead of each re-fetching it from the catalog source
+-- (TCGdex - migrated from PokeWallet, which needed a rate-limited API key;
+-- TCGdex is free/keyless with no meaningful rate limit).
 create table if not exists cards (
   id text primary key,
   name text not null,
@@ -170,10 +172,15 @@ create table if not exists cards (
   set_id text,
   card_number text,
   language text,
-  low_quality boolean not null default false, -- flagged once a device confirms this entry has neither an image nor a price (PokeWallet has some broken/duplicate rows) - sinks to the bottom of search instead of cluttering results
+  image text, -- TCGdex base image URL (append /low.webp or /high.png etc. - see js/tcgdex-client.js)
+  low_quality boolean not null default false, -- flagged once a device confirms this entry has neither an image nor a price - sinks to the bottom of search instead of cluttering results
   created_at timestamptz not null default now()
 );
 create index if not exists cards_name_idx on cards(name);
+
+-- If you already ran this schema before the TCGdex migration, run just
+-- this against your existing database instead:
+-- alter table cards add column if not exists image text;
 
 -- Single shared row tracking the bulk-import job's progress (which set/
 -- page it's up to), so if multiple phones have the app open, they resume

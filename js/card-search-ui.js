@@ -163,7 +163,7 @@ class CardSearchUI {
       // the query includes a number and the English search came up thin.
       const { namePart, numberPart } = window.cardCatalog.parseCardQuery(query);
       if (ranked.length < 5 && numberPart) {
-        const nameHints = [namePart, window.cardCatalog.translateEnglishToJapanese(namePart)].filter(Boolean);
+        const nameHints = window.cardCatalog.buildJapaneseNameHints(namePart);
         const jpMatches = await window.cardCatalog.findJapaneseMatches(numberPart, nameHints, 5);
         jpMatches.forEach(m => { if (!ranked.some(r => r.id === m.id)) ranked.push(m); });
       }
@@ -179,6 +179,36 @@ class CardSearchUI {
       dropdown.innerHTML = localMatches.length > 0
         ? this.renderRows(localMatches)
         : `<div class="card-search-empty">No catalog matches - type your own details below.</div>`;
+    }
+  }
+
+  // Japanese cards use PokeWallet for pricing, not TCGdex - TCGdex's own
+  // price data for Japanese secret/art rares can be badly wrong (a real
+  // ~$177 Magikarp Art Rare priced at €0.08 on TCGdex, apparently linked
+  // to the wrong product). English cards keep using TCGdex, which priced
+  // normally in testing. Falls back to TCGdex for a Japanese card if
+  // PokeWallet doesn't have it either.
+  async fetchAllPricesForCard(cardId, cardLang, name, number) {
+    if (cardLang === 'ja' && window.pokeWalletClient?.configured) {
+      try {
+        const match = await window.pokeWalletClient.findCardByNameAndNumber(name, number);
+        if (match) {
+          const detail = await window.pokeWalletClient.getCard(match.id);
+          const prices = window.pokeWalletClient.extractAllMarketPricesSGD(detail);
+          if (prices.length > 0) return prices;
+        }
+      } catch (err) {
+        console.warn('PokeWallet price fetch failed, falling back to TCGdex:', err);
+      }
+    }
+
+    try {
+      const detail = await window.tcgdexClient.getCard(cardId, cardLang)
+        .catch(() => window.tcgdexClient.getCard(cardId, cardLang === 'ja' ? 'en' : 'ja'));
+      return window.tcgdexClient.extractAllMarketPricesSGD(detail);
+    } catch (err) {
+      console.warn('TCGdex price fetch failed:', err);
+      return [];
     }
   }
 
@@ -244,15 +274,13 @@ class CardSearchUI {
       .catch((err) => console.warn('Card image fetch failed:', err));
 
     const cardLang = card.language || 'en';
-    const pricePromise = window.tcgdexClient.getCard(cardId, cardLang)
-      .catch(() => window.tcgdexClient.getCard(cardId, cardLang === 'ja' ? 'en' : 'ja'))
-      .then((detail) => {
+    const pricePromise = this.fetchAllPricesForCard(cardId, cardLang, card.name, card.number)
+      .then((allPrices) => {
         // TCGPlayer (US) and CardMarket (EU) are genuinely different
         // marketplaces and can diverge quite a bit - show both whenever
-        // TCGdex has them, rather than silently picking one. The stored
-        // marketValue still uses just the first (TCGPlayer-preferred) one,
-        // same as before, since cost/margin tracking needs a single number.
-        const allPrices = window.tcgdexClient.extractAllMarketPricesSGD(detail);
+        // available, rather than silently picking one. The stored
+        // marketValue still uses just the first one, since cost/margin
+        // tracking needs a single number.
         this.resolvedCard.marketValue = allPrices[0]?.price || 0;
         if (allPrices.length > 0) gotPrice = true;
 

@@ -432,7 +432,7 @@ class PokAddictsScanner {
     // what Gemini thought the language was.
     const wantJapanese = this.scanLanguage === 'jap' || primary.isJapanese || matches.length === 0;
     if (wantJapanese && primary.number) {
-      const nameHints = [primary.name, window.cardCatalog.translateEnglishToJapanese(primary.name)].filter(Boolean);
+      const nameHints = window.cardCatalog.buildJapaneseNameHints(primary.name);
       const jpMatches = await window.cardCatalog.findJapaneseMatches(primary.number, nameHints, 6);
 
       jpMatches.forEach(m => {
@@ -597,22 +597,8 @@ class PokAddictsScanner {
       return;
     }
 
-    let variants = [];
-    try {
-      let detail;
-      try {
-        detail = await window.tcgdexClient.getCard(catalogCardId, cardLang);
-      } catch (err) {
-        // cardLang came from a local-catalog lookup that may be stale or
-        // have missed - a card only exists under its real language's
-        // endpoint (a Japanese-only id 404s under /en/), so try the other
-        // language before giving up on price entirely.
-        detail = await window.tcgdexClient.getCard(catalogCardId, cardLang === 'ja' ? 'en' : 'ja');
-      }
-      variants = window.tcgdexClient.extractAllVariantsSGD(detail);
-    } catch (err) {
-      console.warn('TCGdex price fetch failed:', err);
-    }
+    const catalogCard = window.cardCatalog?.getCardById(catalogCardId);
+    const variants = await this.fetchVariantsForCard(catalogCardId, cardLang, finalName, catalogCard?.number || suggestion.number);
 
     if (variants.length <= 1) {
       const marketValue = variants[0]?.price || 0;
@@ -629,6 +615,44 @@ class PokAddictsScanner {
     this.pendingVariantChoice = { name: finalName, set: setName, catalogCardId, variants };
     this.view = 'variantPick';
     this.renderDynamicSectionOnly();
+  }
+
+  // Japanese cards use PokeWallet for pricing, not TCGdex - confirmed
+  // directly that TCGdex's own price data for Japanese secret/art rares
+  // can be badly wrong (a real ~$177 Magikarp Art Rare priced at €0.08 on
+  // TCGdex, apparently linked to the wrong product). English cards keep
+  // using TCGdex, which priced normally in testing. Falls back to TCGdex
+  // for a Japanese card if PokeWallet doesn't have it either.
+  async fetchVariantsForCard(catalogCardId, cardLang, name, number) {
+    if (cardLang === 'ja' && window.pokeWalletClient?.configured) {
+      try {
+        const match = await window.pokeWalletClient.findCardByNameAndNumber(name, number);
+        if (match) {
+          const detail = await window.pokeWalletClient.getCard(match.id);
+          const variants = window.pokeWalletClient.extractAllVariantsSGD(detail);
+          if (variants.length > 0) return variants;
+        }
+      } catch (err) {
+        console.warn('PokeWallet price fetch failed, falling back to TCGdex:', err);
+      }
+    }
+
+    try {
+      let detail;
+      try {
+        detail = await window.tcgdexClient.getCard(catalogCardId, cardLang);
+      } catch (err) {
+        // cardLang came from a local-catalog lookup that may be stale or
+        // have missed - a card only exists under its real language's
+        // endpoint (a Japanese-only id 404s under /en/), so try the other
+        // language before giving up on price entirely.
+        detail = await window.tcgdexClient.getCard(catalogCardId, cardLang === 'ja' ? 'en' : 'ja');
+      }
+      return window.tcgdexClient.extractAllVariantsSGD(detail);
+    } catch (err) {
+      console.warn('TCGdex price fetch failed:', err);
+      return [];
+    }
   }
 
   addRawToScanList(name, set, catalogCardId, marketValue, variantLabel) {
@@ -703,7 +727,7 @@ class PokAddictsScanner {
     }
 
     if (matches.length === 0 && number) {
-      const nameHints = [name, window.cardCatalog.translateEnglishToJapanese(name)].filter(Boolean);
+      const nameHints = window.cardCatalog.buildJapaneseNameHints(name);
       matches = await window.cardCatalog.findJapaneseMatches(number, nameHints, 3);
     }
 

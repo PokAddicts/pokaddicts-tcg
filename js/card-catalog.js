@@ -362,6 +362,25 @@ class CardCatalog {
     return this._enToJpMap[name.toLowerCase()] || null;
   }
 
+  // Builds a broader set of name hints for matching against TCGdex's
+  // Japanese catalog. Two problems compound here: modifier suffixes like
+  // "ex"/"GX"/"V"/"X"/"Mega" won't appear in the reverse-translation table
+  // (which only knows base species names, e.g. "charizard" not "charizard
+  // x ex"), AND a compound name like "Charizard X EX" won't literally
+  // substring-match a native-script name like "メガリザードンXex" either -
+  // but the base species alone, translated ("リザードン"), DOES appear
+  // inside it. So this also tries just the first word of the name, both
+  // as literal English text and translated, alongside the full name.
+  buildJapaneseNameHints(name) {
+    if (!name) return [];
+    const hints = [name];
+    const firstWord = name.trim().split(/\s+/)[0];
+    if (firstWord && firstWord.toLowerCase() !== name.toLowerCase()) hints.push(firstWord);
+    hints.push(this.translateEnglishToJapanese(name));
+    if (firstWord) hints.push(this.translateEnglishToJapanese(firstWord));
+    return [...new Set(hints.filter(Boolean))];
+  }
+
   // Strict number+name-hint search against TCGdex's Japanese catalog: a
   // card only counts as a match if its name actually matches one of the
   // hints (an English guess, or its reverse-translated Japanese guess) -
@@ -548,9 +567,26 @@ class CardCatalog {
   // Live price lookup (in SGD) used during the daily inventory price
   // refresh - the local catalog id IS the TCGdex id, so this is a direct,
   // unambiguous lookup once we know which language endpoint it lives on.
+  // Japanese cards use PokeWallet for pricing instead of TCGdex - see
+  // js/scanner.js's fetchVariantsForCard() for why (TCGdex's own pricing
+  // for Japanese secret/art rares proved unreliable).
   async fetchLivePrice(cardId) {
     const card = this.getCardById(cardId);
     const lang = card?.language || 'en';
+
+    if (lang === 'ja' && window.pokeWalletClient?.configured) {
+      try {
+        const match = await window.pokeWalletClient.findCardByNameAndNumber(card.name, card.number);
+        if (match) {
+          const detail = await window.pokeWalletClient.getCard(match.id);
+          const result = window.pokeWalletClient.extractMarketPriceSGD(detail);
+          if (result.price > 0) return result;
+        }
+      } catch (err) {
+        console.warn('PokeWallet price lookup failed, falling back to TCGdex:', err);
+      }
+    }
+
     try {
       const detail = await window.tcgdexClient.getCard(cardId, lang)
         .catch(() => window.tcgdexClient.getCard(cardId, lang === 'ja' ? 'en' : 'ja'));

@@ -197,10 +197,13 @@ class PokAddictsScanner {
     return html;
   }
 
-  // Plain icon capture button - hidden while reviewing a suggestion,
-  // variant choice, or slab form so it doesn't compete for attention.
+  // Plain icon capture button - stays visible even while reviewing
+  // suggestions so there's always a way to retake the photo without first
+  // hunting for the small dismiss (X) on the result card. Still hidden
+  // during the variant/slab forms, which are short deliberate follow-up
+  // steps right after a confirm rather than something to retry.
   renderCaptureControlsHTML() {
-    if (this.view === 'suggestions' || this.view === 'slabDetails' || this.view === 'variantPick') return '';
+    if (this.view === 'slabDetails' || this.view === 'variantPick') return '';
 
     return `
       <div class="scanner-controls-row">
@@ -398,11 +401,11 @@ class PokAddictsScanner {
   // card isn't in the PokeWallet catalog yet.
   async buildCandidateList(primary, ocrHint) {
     const query = [primary.name, primary.number].filter(Boolean).join(' ').trim();
-    let matches = window.cardCatalog ? window.cardCatalog.searchLocal(query, 8) : [];
+    let matches = window.cardCatalog ? window.cardCatalog.searchLocal(query, 12) : [];
 
-    if (matches.length < 5 && window.pokeWalletClient?.configured) {
+    if (matches.length < 8 && window.pokeWalletClient?.configured) {
       try {
-        const res = await window.pokeWalletClient.searchCards(query, { limit: 8 });
+        const res = await window.pokeWalletClient.searchCards(query, { limit: 12 });
         const liveCards = (res.results || []).map(r => window.cardSearchUI.normalizeLiveSearchResult(r));
         await window.cardCatalog.cacheLiveResults(liveCards);
         const merged = [...matches];
@@ -413,7 +416,7 @@ class PokAddictsScanner {
       }
     }
 
-    const candidates = matches.slice(0, 5).map(m => ({
+    const candidates = matches.slice(0, 8).map(m => ({
       name: m.name, set: m.set, number: m.number, catalogCardId: m.id, source: 'pokewallet'
     }));
 
@@ -421,22 +424,35 @@ class PokAddictsScanner {
       candidates.push({ name: primary.name, set: primary.set, number: primary.number, catalogCardId: '', source: 'cardsight' });
     }
 
-    // Japanese-edition catalog entries carry their own native-script name
-    // (not an English translation), so a query built from CardSight's
-    // English guess would never substring-match them - whenever Japanese
-    // is in play (OCR actually read Japanese text on the card, or the
-    // language toggle is set to JP), search the JP-filtered catalog using
-    // the real Japanese text instead: what OCR read directly if it got a
-    // clean match, otherwise the English guess translated backwards
-    // through the same species lookup table.
+    // Card NAMES are in English regardless of the set's language (verified
+    // against PokeWallet's own data - a card from a Japanese-only set is
+    // still named e.g. "Pikachu", not Japanese text), so the query itself
+    // stays in English (OCR's translated species name if it read Japanese
+    // text, else CardSight's own guess) - only the candidate pool gets
+    // narrowed to Japanese-language sets, whenever Japanese is in play
+    // (OCR detected Japanese text, or the language toggle is set to JP).
     const wantJapanese = this.scanLanguage === 'jap' || ocrHint?.hasJapanese;
-    if (wantJapanese && window.cardCatalog) {
-      const jpTerm = ocrHint?.japaneseSpeciesName
-        || (primary.name ? this.getEnglishToJapaneseMap()[primary.name.toLowerCase()] : null);
+    if (wantJapanese) {
+      const jpNameGuess = ocrHint?.translatedName || primary.name;
+      if (jpNameGuess) {
+        const jpQuery = [jpNameGuess, ocrHint?.number || primary.number].filter(Boolean).join(' ').trim();
+        let jpMatches = window.cardCatalog ? window.cardCatalog.searchLocalByLanguage(jpQuery, 'jap', 4) : [];
 
-      if (jpTerm) {
-        const jpQuery = [jpTerm, ocrHint?.number || primary.number].filter(Boolean).join(' ').trim();
-        const jpMatches = window.cardCatalog.searchLocalByLanguage(jpQuery, 'jap', 3);
+        // Local sync covers under half of PokeWallet's ~460 Japanese sets
+        // at any given time (it's a slow, resumable background import) -
+        // a live search filtered to Japanese-tagged sets fills the gap for
+        // sets the device hasn't synced yet.
+        if (jpMatches.length === 0 && window.pokeWalletClient?.configured) {
+          try {
+            const res = await window.pokeWalletClient.searchCards(jpQuery, { limit: 15 });
+            const liveCards = (res.results || []).map(r => window.cardSearchUI.normalizeLiveSearchResult(r));
+            await window.cardCatalog.cacheLiveResults(liveCards);
+            const jpLiveCards = liveCards.filter(c => (c.language || '').toLowerCase().startsWith('jap'));
+            jpMatches = window.cardCatalog.rankCards(jpLiveCards, jpQuery).slice(0, 4);
+          } catch (err) {
+            console.warn('Live Japanese-edition search failed:', err);
+          }
+        }
 
         jpMatches.forEach(m => {
           if (!candidates.some(c => c.catalogCardId === m.id)) {
@@ -696,24 +712,6 @@ class PokAddictsScanner {
   translateJapaneseName(text) {
     const bestMatch = this.findJapaneseSpeciesMatch(text);
     return bestMatch ? window.POKEMON_JP_NAMES[bestMatch] : null;
-  }
-
-  // Reverse of POKEMON_JP_NAMES (English -> Japanese), built once on first
-  // use - lets an English guess (e.g. CardSight's own detection) be
-  // translated BACK into Japanese to search the JP-filtered catalog, for
-  // when the language toggle is set to JP but OCR didn't get a clean read
-  // of the printed Japanese text itself.
-  getEnglishToJapaneseMap() {
-    if (this._enToJpMap) return this._enToJpMap;
-    const map = {};
-    if (window.POKEMON_JP_NAMES) {
-      for (const jpName in window.POKEMON_JP_NAMES) {
-        const en = window.POKEMON_JP_NAMES[jpName].toLowerCase();
-        if (!map[en]) map[en] = jpName;
-      }
-    }
-    this._enToJpMap = map;
-    return map;
   }
 
   // --- Graded slabs: manual grading/cost/market entry ---

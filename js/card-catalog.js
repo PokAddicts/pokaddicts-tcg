@@ -278,17 +278,30 @@ class CardCatalog {
     return this.rankCards(this.cards, query).slice(0, limit);
   }
 
-  // Same as searchLocal, but restricted to one language edition first
-  // (e.g. 'jap') - Japanese-edition entries carry their own native-script
-  // name rather than an English translation, so ranking a Japanese query
-  // against the full mixed-language catalog works fine, but an English
-  // query would never substring-match them at all. Used by the scanner
-  // when a Japanese card is detected or the language toggle is set to JP.
+  // Same as searchLocal, but restricted to one set-language edition (e.g.
+  // 'jap') - card NAMES are in English regardless of the set's language
+  // (PokeWallet's own catalog data, confirmed by inspection - e.g. a card
+  // from the Japanese-only set "SV2a: Pokemon Card 151" is still named
+  // "Pikachu", not its Japanese text), so the query itself should stay in
+  // English; only the candidate pool is narrowed to that language's sets.
   searchLocalByLanguage(query, languageCode, limit = 15) {
     if (!query || !query.trim()) return [];
     const lang = languageCode.toLowerCase();
     const filtered = this.cards.filter(c => (c.language || '').toLowerCase().startsWith(lang));
     return this.rankCards(filtered, query).slice(0, limit);
+  }
+
+  // Cross-references a card's set_id against the full /sets list (fetched
+  // once, up front, before the much slower per-card sync even starts) to
+  // find that set's language - works even when full card-level sync is
+  // nowhere near that set yet, which is why this is used to tag live
+  // search results with a language instead of relying on local card sync.
+  getLanguageForSetId(setId) {
+    if (!this._setLanguageMap) {
+      this._setLanguageMap = new Map();
+      (this.syncState.sets || []).forEach(s => this._setLanguageMap.set(String(s.id), s.language));
+    }
+    return this._setLanguageMap.get(String(setId)) || '';
   }
 
   getCardById(id) {

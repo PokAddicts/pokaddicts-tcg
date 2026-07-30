@@ -69,7 +69,11 @@ class CardSearchUI {
       set: info.set_name || '',
       setId: info.set_id || '',
       number: info.card_number || '',
-      language: ''
+      // Live search results don't carry a language field of their own, but
+      // the full /sets list (with each set's language) is fetched up front
+      // well before per-card sync catches up, so this cross-reference
+      // works even for sets the local card cache hasn't reached yet.
+      language: window.cardCatalog ? window.cardCatalog.getLanguageForSetId(info.set_id) : ''
     };
   }
 

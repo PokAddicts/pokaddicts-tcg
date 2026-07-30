@@ -195,15 +195,25 @@ class CardCatalog {
   }
 
   // Splits "flareon 202" into { namePart: "flareon", numberPart: "202" } -
-  // people search by card number as much as by name, so a trailing number
-  // in the query is treated as the card number, not part of the name.
+  // people search by card number as much as by name, so a trailing (or
+  // leading) number in the query is treated as the card number, not part
+  // of the name. Almost nobody types "#" before the number, so it's
+  // stripped wherever it appears rather than only matched optionally right
+  // before the digits.
   parseCardQuery(query) {
-    const trimmed = (query || '').trim();
-    const match = trimmed.match(/^(.*?)\s*#?(\d+)$/);
-    return {
-      namePart: (match ? match[1] : trimmed).toLowerCase().trim(),
-      numberPart: match ? match[2] : null
-    };
+    const trimmed = (query || '').replace(/#/g, ' ').trim().replace(/\s+/g, ' ');
+
+    let match = trimmed.match(/^(.*?)\s*(\d+)$/);
+    if (match) {
+      return { namePart: match[1].toLowerCase().trim(), numberPart: match[2] };
+    }
+
+    match = trimmed.match(/^(\d+)\s*(.*)$/);
+    if (match) {
+      return { namePart: match[2].toLowerCase().trim(), numberPart: match[1] };
+    }
+
+    return { namePart: trimmed.toLowerCase(), numberPart: null };
   }
 
   // Ranks a list of cards against a query: name must match (prefix beats
@@ -213,26 +223,26 @@ class CardCatalog {
   // so a strict filter would hide otherwise-good name matches).
   rankCards(cards, query) {
     const { namePart, numberPart } = this.parseCardQuery(query);
-    // Set numbers are often zero-padded in the catalog (e.g. "005") even
-    // though nobody types the leading zeros - strip them from both sides
-    // before comparing, or "5" would never register as an exact match
-    // against "005" and would fall back to a weak substring score tied
-    // with unrelated cards like "015"/"025"/"105".
-    const normalizedQueryNumber = numberPart ? numberPart.replace(/^0+(?=\d)/, '') : null;
+    // Card numbers are almost always zero-padded in the catalog (e.g.
+    // "005", or "005/102" with the set total) even though nobody types the
+    // leading zeros - compare by numeric VALUE (not string equality) so
+    // "5" matches "005" and "005/102" alike, instead of only matching
+    // cards that happen to share the exact same padding/suffix format.
+    const queryNum = numberPart ? parseInt(numberPart, 10) : null;
     const scored = [];
 
     for (const c of cards) {
       const name = (c.name || '').toLowerCase();
       const cardNumber = (c.number || '').toString();
-      const normalizedCardNumber = cardNumber.replace(/^0+(?=\d)/, '');
+      const leadingDigits = cardNumber.match(/^0*(\d+)/);
+      const cardNum = leadingDigits ? parseInt(leadingDigits[1], 10) : null;
 
       if (namePart && !name.includes(namePart)) continue;
 
       let score = namePart && name.startsWith(namePart) ? 0 : 1;
 
       if (numberPart) {
-        if (normalizedCardNumber === normalizedQueryNumber) score -= 100;
-        else if (normalizedCardNumber.startsWith(normalizedQueryNumber)) score -= 50;
+        if (cardNum !== null && cardNum === queryNum) score -= 100;
         else if (cardNumber.includes(numberPart)) score -= 10;
       }
 

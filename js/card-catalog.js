@@ -278,6 +278,19 @@ class CardCatalog {
     return this.rankCards(this.cards, query).slice(0, limit);
   }
 
+  // Same as searchLocal, but restricted to one language edition first
+  // (e.g. 'jap') - Japanese-edition entries carry their own native-script
+  // name rather than an English translation, so ranking a Japanese query
+  // against the full mixed-language catalog works fine, but an English
+  // query would never substring-match them at all. Used by the scanner
+  // when a Japanese card is detected or the language toggle is set to JP.
+  searchLocalByLanguage(query, languageCode, limit = 15) {
+    if (!query || !query.trim()) return [];
+    const lang = languageCode.toLowerCase();
+    const filtered = this.cards.filter(c => (c.language || '').toLowerCase().startsWith(lang));
+    return this.rankCards(filtered, query).slice(0, limit);
+  }
+
   getCardById(id) {
     return this.cards.find(c => c.id === id) || null;
   }

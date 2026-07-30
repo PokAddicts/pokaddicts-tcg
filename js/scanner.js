@@ -42,6 +42,7 @@ class PokAddictsScanner {
     this.pendingIsSlab = false; // whether CardSight's original detection looked like a graded slab
     this.pendingSlabSuggestion = null; // the confirmed card being filled in as a slab (grading/cost/market)
     this.pendingVariantChoice = null; // { name, set, catalogCardId, variants } - awaiting a Normal/Holo/Reverse Holo pick
+    this.scanLanguage = 'eng'; // 'eng' | 'jap' - which language edition to prioritize in suggestions
   }
 
   // --- Modal lifecycle ---
@@ -56,10 +57,22 @@ class PokAddictsScanner {
     this.pendingIsSlab = false;
     this.pendingSlabSuggestion = null;
     this.pendingVariantChoice = null;
+    this.scanLanguage = 'eng';
     this.view = 'capture';
 
     this.renderScanWorkspace();
     this.startCamera();
+  }
+
+  // Only toggles the active class on the two buttons directly, rather than
+  // re-rendering the workspace - renderScanWorkspace() rebuilds the whole
+  // body including a fresh <video> element, which would blank the camera
+  // feed until startCamera() reattached it.
+  setScanLanguage(lang) {
+    this.scanLanguage = lang;
+    document.querySelectorAll('.scanner-lang-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.lang === lang);
+    });
   }
 
   closeScannerModal() {
@@ -126,6 +139,10 @@ class PokAddictsScanner {
 
       <div class="scanner-top-header">
         <span class="scanner-top-header-title">📷 Scan Card</span>
+        <div class="scanner-lang-toggle">
+          <button type="button" class="scanner-lang-btn ${this.scanLanguage === 'eng' ? 'active' : ''}" data-lang="eng" onclick="window.scanner.setScanLanguage('eng')">EN</button>
+          <button type="button" class="scanner-lang-btn ${this.scanLanguage === 'jap' ? 'active' : ''}" data-lang="jap" onclick="window.scanner.setScanLanguage('jap')">JP</button>
+        </div>
       </div>
 
       ${showScanChrome ? `
@@ -364,8 +381,9 @@ class PokAddictsScanner {
       const hasJapanese = /[぀-ヿ一-鿿]/.test(text);
       const numberMatch = text.match(/(\d{1,4})\s*\/\s*(\d{1,4})/);
       const number = numberMatch ? numberMatch[1] : '';
-      const translatedName = hasJapanese ? this.translateJapaneseName(text) : null;
-      return { hasJapanese, number, translatedName };
+      const japaneseSpeciesName = hasJapanese ? this.findJapaneseSpeciesMatch(text) : null;
+      const translatedName = japaneseSpeciesName ? window.POKEMON_JP_NAMES[japaneseSpeciesName] : null;
+      return { hasJapanese, number, translatedName, japaneseSpeciesName };
     } catch (err) {
       console.warn('OCR hint failed:', err);
       return null;
@@ -403,30 +421,29 @@ class PokAddictsScanner {
       candidates.push({ name: primary.name, set: primary.set, number: primary.number, catalogCardId: '', source: 'cardsight' });
     }
 
-    // OCR detected Japanese text matching a known species, different from
-    // CardSight's own guess - search for that too and surface it first,
-    // giving the likely-correct card a real shot even when CardSight
-    // misreads a Japanese print.
-    if (ocrHint?.translatedName && ocrHint.translatedName.toLowerCase() !== (primary.name || '').toLowerCase()) {
-      const jpQuery = [ocrHint.translatedName, ocrHint.number || primary.number].filter(Boolean).join(' ').trim();
-      let jpMatches = window.cardCatalog ? window.cardCatalog.searchLocal(jpQuery, 3) : [];
+    // Japanese-edition catalog entries carry their own native-script name
+    // (not an English translation), so a query built from CardSight's
+    // English guess would never substring-match them - whenever Japanese
+    // is in play (OCR actually read Japanese text on the card, or the
+    // language toggle is set to JP), search the JP-filtered catalog using
+    // the real Japanese text instead: what OCR read directly if it got a
+    // clean match, otherwise the English guess translated backwards
+    // through the same species lookup table.
+    const wantJapanese = this.scanLanguage === 'jap' || ocrHint?.hasJapanese;
+    if (wantJapanese && window.cardCatalog) {
+      const jpTerm = ocrHint?.japaneseSpeciesName
+        || (primary.name ? this.getEnglishToJapaneseMap()[primary.name.toLowerCase()] : null);
 
-      if (jpMatches.length === 0 && window.pokeWalletClient?.configured) {
-        try {
-          const res = await window.pokeWalletClient.searchCards(jpQuery, { limit: 3 });
-          const liveCards = (res.results || []).map(r => window.cardSearchUI.normalizeLiveSearchResult(r));
-          await window.cardCatalog.cacheLiveResults(liveCards);
-          jpMatches = window.cardCatalog.rankCards(liveCards, jpQuery);
-        } catch (err) {
-          console.warn('OCR-assisted Japanese search failed:', err);
-        }
+      if (jpTerm) {
+        const jpQuery = [jpTerm, ocrHint?.number || primary.number].filter(Boolean).join(' ').trim();
+        const jpMatches = window.cardCatalog.searchLocalByLanguage(jpQuery, 'jap', 3);
+
+        jpMatches.forEach(m => {
+          if (!candidates.some(c => c.catalogCardId === m.id)) {
+            candidates.unshift({ name: m.name, set: m.set, number: m.number, catalogCardId: m.id, source: 'japanese' });
+          }
+        });
       }
-
-      jpMatches.slice(0, 2).forEach(m => {
-        if (!candidates.some(c => c.catalogCardId === m.id)) {
-          candidates.unshift({ name: m.name, set: m.set, number: m.number, catalogCardId: m.id, source: 'ocr-japanese' });
-        }
-      });
     }
 
     return candidates;
@@ -434,7 +451,7 @@ class PokAddictsScanner {
 
   sourceLabel(source) {
     if (source === 'cardsight') return ' • AI guess, unverified';
-    if (source === 'ocr-japanese') return ' • matched from Japanese text';
+    if (source === 'japanese') return ' • Japanese edition match';
     return '';
   }
 
@@ -655,11 +672,12 @@ class PokAddictsScanner {
     return matches[0] || null;
   }
 
-  // Looks for a known Japanese species name as a substring of the given
-  // text and returns the matching official English name. Covers Gen 1-7 -
-  // a species not in the table (e.g. very recent Gen 8/9 prints) falls
-  // back to using the raw text as-is.
-  translateJapaneseName(text) {
+  // Finds the longest known Japanese species name that appears as a
+  // substring of the given text, returning the raw Japanese text itself
+  // (not translated) - used to build a query that can actually match a
+  // Japanese-edition catalog entry, since those carry their own
+  // native-script name rather than an English translation.
+  findJapaneseSpeciesMatch(text) {
     if (!window.POKEMON_JP_NAMES) return null;
 
     let bestMatch = null;
@@ -668,7 +686,34 @@ class PokAddictsScanner {
         bestMatch = jpName;
       }
     }
+    return bestMatch;
+  }
+
+  // Looks for a known Japanese species name as a substring of the given
+  // text and returns the matching official English name. Covers Gen 1-7 -
+  // a species not in the table (e.g. very recent Gen 8/9 prints) falls
+  // back to using the raw text as-is.
+  translateJapaneseName(text) {
+    const bestMatch = this.findJapaneseSpeciesMatch(text);
     return bestMatch ? window.POKEMON_JP_NAMES[bestMatch] : null;
+  }
+
+  // Reverse of POKEMON_JP_NAMES (English -> Japanese), built once on first
+  // use - lets an English guess (e.g. CardSight's own detection) be
+  // translated BACK into Japanese to search the JP-filtered catalog, for
+  // when the language toggle is set to JP but OCR didn't get a clean read
+  // of the printed Japanese text itself.
+  getEnglishToJapaneseMap() {
+    if (this._enToJpMap) return this._enToJpMap;
+    const map = {};
+    if (window.POKEMON_JP_NAMES) {
+      for (const jpName in window.POKEMON_JP_NAMES) {
+        const en = window.POKEMON_JP_NAMES[jpName].toLowerCase();
+        if (!map[en]) map[en] = jpName;
+      }
+    }
+    this._enToJpMap = map;
+    return map;
   }
 
   // --- Graded slabs: manual grading/cost/market entry ---

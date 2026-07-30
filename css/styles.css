@@ -859,9 +859,43 @@ select.form-control {
 }
 
 .scanner-top-header-title {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   font-size: 1.05rem;
   font-weight: 800;
   color: #fff;
+}
+
+/* EN/JP language toggle - biases scan suggestions toward that language's
+   catalog edition. Pinned to the header's right edge since the title is
+   centered independently via absolute positioning above. */
+.scanner-lang-toggle {
+  position: absolute;
+  right: 16px;
+  right: max(16px, env(safe-area-inset-right));
+  display: flex;
+  gap: 2px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 20px;
+  padding: 3px;
+}
+
+.scanner-lang-btn {
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  padding: 5px 11px;
+  border-radius: 16px;
+  cursor: pointer;
+}
+
+.scanner-lang-btn.active {
+  background: var(--accent-gold);
+  color: #0b0f19;
 }
 
 .scanner-fullscreen-close {

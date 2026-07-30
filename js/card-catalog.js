@@ -265,37 +265,36 @@ class CardCatalog {
   }
 
   // Same idea as searchLocal, but restricted to one set-language edition
-  // (e.g. 'ja'), and matched by NUMBER ONLY rather than reusing rankCards'
-  // name+number logic. TCGdex's Japanese catalog is inconsistent - some
-  // cards have an English name filled in, many still only have their
-  // native Japanese-script name - so requiring a name substring match
-  // (like rankCards does) would wrongly exclude genuine matches whenever
-  // the only name we have is an English guess (from Gemini) that doesn't
-  // appear anywhere in that card's Japanese name field. Name hints are
-  // still used, just as a permissive tiebreaker/bonus rather than a filter
-  // - a card whose name happens to match one of the hints sorts first,
-  // but a same-numbered card with no name match still shows up rather
-  // than being silently dropped.
+  // (e.g. 'ja'), matched by NUMBER first and then REQUIRING a name-hint
+  // match - not just as a tiebreaker. A card number is reused across
+  // hundreds of unrelated species across all the sets in a language (e.g.
+  // ~50+ completely different Pokemon all use number "080" across
+  // Japanese sets), so number alone is nowhere near enough signal; a
+  // "match" that's actually the wrong species is worse than showing no
+  // match at all. nameHints should include both Gemini's raw English
+  // guess and (via scanner.js's translateEnglishToJapanese) a guessed
+  // native-script name, since TCGdex's Japanese catalog inconsistently
+  // stores cards under either an English or Japanese name.
   searchLocalByLanguage(numberQuery, languageCode, limit = 15, nameHints = []) {
     if (!numberQuery) return [];
     const lang = languageCode.toLowerCase();
     const queryNum = parseInt(numberQuery, 10);
     if (isNaN(queryNum)) return [];
     const hints = nameHints.filter(Boolean).map(h => h.toLowerCase());
+    if (hints.length === 0) return [];
 
-    const scored = [];
+    const matches = [];
     for (const c of this.cards) {
       if (!(c.language || '').toLowerCase().startsWith(lang)) continue;
       const leadingDigits = (c.number || '').toString().match(/^0*(\d+)/);
       const cardNum = leadingDigits ? parseInt(leadingDigits[1], 10) : null;
       if (cardNum !== queryNum) continue;
+      if (!hints.some(h => (c.name || '').toLowerCase().includes(h))) continue;
 
-      const nameMatches = hints.some(h => (c.name || '').toLowerCase().includes(h));
-      scored.push({ card: c, nameBonus: nameMatches ? 0 : 1 });
+      matches.push(c);
     }
 
-    scored.sort((a, b) => a.nameBonus - b.nameBonus);
-    return scored.slice(0, limit).map(s => s.card);
+    return matches.slice(0, limit);
   }
 
   // Cross-references a set id against the full sets list (fetched once, up

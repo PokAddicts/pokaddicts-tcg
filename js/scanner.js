@@ -420,50 +420,57 @@ class PokAddictsScanner {
     // TCGdex's Japanese catalog is inconsistent - some cards have an
     // English name filled in, many still only have their native
     // Japanese-script name (confirmed by inspection: e.g. Magikarp #080
-    // in the Japanese SV1a set is stored as "コイキング", not "Magikarp") -
-    // so this searches by NUMBER ONLY against the Japanese-language pool
-    // (see searchLocalByLanguage), using the English guess and a reverse-
-    // translated Japanese guess purely as a permissive tiebreaker, never
-    // as an exclusionary filter. Triggers whenever Japanese is explicitly
-    // in play (the language toggle, or Gemini reading Japanese text on
-    // the card), OR as a safety net when the English search above found
-    // nothing at all - Gemini's own Japanese-detection isn't perfect, and
-    // a genuinely Japanese-only card will never turn up in an English-only
-    // search regardless of what Gemini thought the language was.
+    // in the Japanese SV1a set is stored as "コイキング", not "Magikarp").
+    // Triggers whenever Japanese is explicitly in play (the language
+    // toggle, or Gemini reading Japanese text on the card), OR as a safety
+    // net when the English search above found nothing at all - Gemini's
+    // own Japanese-detection isn't perfect, and a genuinely Japanese-only
+    // card will never turn up in an English-only search regardless of
+    // what Gemini thought the language was.
     const wantJapanese = this.scanLanguage === 'jap' || primary.isJapanese || matches.length === 0;
     if (wantJapanese && primary.number) {
       const nameHints = [primary.name, this.translateEnglishToJapanese(primary.name)].filter(Boolean);
-      let jpMatches = window.cardCatalog ? window.cardCatalog.searchLocalByLanguage(primary.number, 'ja', 6, nameHints) : [];
-
-      // Live search filtered to the Japanese endpoint (number only, same
-      // reasoning as above) fills the gap for sets the local device
-      // hasn't synced yet.
-      if (jpMatches.length === 0 && window.tcgdexClient?.configured) {
-        try {
-          const results = await window.tcgdexClient.searchCards(primary.number, { limit: 20, lang: 'ja' });
-          const liveCards = results.map(r => window.cardSearchUI.normalizeLiveSearchResult(r, 'ja'));
-          await window.cardCatalog.cacheLiveResults(liveCards);
-          const hints = nameHints.map(h => h.toLowerCase());
-          jpMatches = liveCards
-            .sort((a, b) => {
-              const aMatch = hints.some(h => (a.name || '').toLowerCase().includes(h)) ? 0 : 1;
-              const bMatch = hints.some(h => (b.name || '').toLowerCase().includes(h)) ? 0 : 1;
-              return aMatch - bMatch;
-            })
-            .slice(0, 6);
-        } catch (err) {
-          console.warn('Live Japanese-edition search failed:', err);
-        }
-      }
+      const jpMatches = await this.findJapaneseMatches(primary.number, nameHints, 6);
 
       jpMatches.forEach(m => {
         if (!candidates.some(c => c.catalogCardId === m.id)) {
-          candidates.unshift({ name: m.name, set: m.set, number: m.number, catalogCardId: m.id, source: 'japanese' });
+          // Translate back to English for display - showing raw Japanese
+          // script left no way to tell which card was actually suggested.
+          candidates.unshift({ name: this.translateJapaneseName(m.name) || m.name, set: m.set, number: m.number, catalogCardId: m.id, source: 'japanese' });
         }
       });
     }
 
     return candidates;
+  }
+
+  // Strict number+name-hint search against TCGdex's Japanese catalog: a
+  // card only counts as a match if its name actually matches one of the
+  // hints (Gemini's raw English guess, or a reverse-translated Japanese
+  // guess) - a card number is reused across dozens of unrelated species
+  // within the Japanese card pool (~50+ completely different Pokemon all
+  // share number "080" alone), so a same-numbered-but-wrong-species result
+  // is worse than no result at all. Local cache first, live fallback.
+  async findJapaneseMatches(number, nameHints, limit = 6) {
+    if (!number) return [];
+    const hints = nameHints.filter(Boolean);
+    if (hints.length === 0) return [];
+
+    let matches = window.cardCatalog ? window.cardCatalog.searchLocalByLanguage(number, 'ja', limit, hints) : [];
+
+    if (matches.length === 0 && window.tcgdexClient?.configured) {
+      try {
+        const results = await window.tcgdexClient.searchCards(number, { limit: 20, lang: 'ja' });
+        const liveCards = results.map(r => window.cardSearchUI.normalizeLiveSearchResult(r, 'ja'));
+        await window.cardCatalog.cacheLiveResults(liveCards);
+        const lowerHints = hints.map(h => h.toLowerCase());
+        matches = liveCards.filter(c => lowerHints.some(h => (c.name || '').toLowerCase().includes(h))).slice(0, limit);
+      } catch (err) {
+        console.warn('Live Japanese-edition search failed:', err);
+      }
+    }
+
+    return matches;
   }
 
   sourceLabel(source) {
@@ -687,22 +694,34 @@ class PokAddictsScanner {
   }
 
   // Finds a TCGdex catalog match for a confirmed card name (+ optional
-  // number) - local cache first, live search fallback.
+  // number) - local cache first, live search fallback. When picking the
+  // raw "AI guess, unverified" suggestion specifically, this is what tries
+  // to actually attach a real price - so if the English search comes up
+  // empty, it's worth also trying the Japanese catalog (strict number+name
+  // match, see findJapaneseMatches) before giving up, in case the card is
+  // Japanese-only and just wasn't caught by the scan-time Japanese search.
   async resolveCatalogMatch(name, number) {
     const query = [name, number].filter(Boolean).join(' ').trim();
-    if (!query) return null;
+    let matches = [];
 
-    let matches = window.cardCatalog ? window.cardCatalog.searchLocal(query, 5) : [];
+    if (query) {
+      matches = window.cardCatalog ? window.cardCatalog.searchLocal(query, 5) : [];
 
-    if (matches.length === 0 && window.tcgdexClient?.configured) {
-      try {
-        const results = await window.tcgdexClient.searchCards(query, { limit: 5, lang: 'en' });
-        const liveCards = results.map(r => window.cardSearchUI.normalizeLiveSearchResult(r, 'en'));
-        await window.cardCatalog.cacheLiveResults(liveCards);
-        matches = window.cardCatalog.rankCards(liveCards, query);
-      } catch (err) {
-        console.warn('TCGdex live search fallback failed:', err);
+      if (matches.length === 0 && window.tcgdexClient?.configured) {
+        try {
+          const results = await window.tcgdexClient.searchCards(query, { limit: 5, lang: 'en' });
+          const liveCards = results.map(r => window.cardSearchUI.normalizeLiveSearchResult(r, 'en'));
+          await window.cardCatalog.cacheLiveResults(liveCards);
+          matches = window.cardCatalog.rankCards(liveCards, query);
+        } catch (err) {
+          console.warn('TCGdex live search fallback failed:', err);
+        }
       }
+    }
+
+    if (matches.length === 0 && number) {
+      const nameHints = [name, this.translateEnglishToJapanese(name)].filter(Boolean);
+      matches = await this.findJapaneseMatches(number, nameHints, 3);
     }
 
     return matches[0] || null;

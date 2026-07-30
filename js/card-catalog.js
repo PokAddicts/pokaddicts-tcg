@@ -213,19 +213,26 @@ class CardCatalog {
   // so a strict filter would hide otherwise-good name matches).
   rankCards(cards, query) {
     const { namePart, numberPart } = this.parseCardQuery(query);
+    // Set numbers are often zero-padded in the catalog (e.g. "005") even
+    // though nobody types the leading zeros - strip them from both sides
+    // before comparing, or "5" would never register as an exact match
+    // against "005" and would fall back to a weak substring score tied
+    // with unrelated cards like "015"/"025"/"105".
+    const normalizedQueryNumber = numberPart ? numberPart.replace(/^0+(?=\d)/, '') : null;
     const scored = [];
 
     for (const c of cards) {
       const name = (c.name || '').toLowerCase();
       const cardNumber = (c.number || '').toString();
+      const normalizedCardNumber = cardNumber.replace(/^0+(?=\d)/, '');
 
       if (namePart && !name.includes(namePart)) continue;
 
       let score = namePart && name.startsWith(namePart) ? 0 : 1;
 
       if (numberPart) {
-        if (cardNumber === numberPart) score -= 100;
-        else if (cardNumber.startsWith(numberPart)) score -= 50;
+        if (normalizedCardNumber === normalizedQueryNumber) score -= 100;
+        else if (normalizedCardNumber.startsWith(normalizedQueryNumber)) score -= 50;
         else if (cardNumber.includes(numberPart)) score -= 10;
       }
 

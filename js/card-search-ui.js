@@ -42,6 +42,16 @@ class CardSearchUI {
     return `${name} #${number}`;
   }
 
+  // Clean display label for where a price came from - strips the
+  // internal "(USD→SGD)" conversion note, just showing which marketplace
+  // it's based on.
+  formatPriceSource(source) {
+    if (!source) return '';
+    if (source.startsWith('TCGPlayer')) return 'TCG Player';
+    if (source.startsWith('CardMarket')) return 'CardMarket';
+    return source;
+  }
+
   renderRows(cards) {
     return cards.map(c => `
       <div class="card-search-row" onclick="window.cardSearchUI.selectCard('${c.id}')">
@@ -150,7 +160,10 @@ class CardSearchUI {
     }
 
     this.resolvedCard = {
-      name: card.name,
+      // Include the card number in the stored name (e.g. "Dark Houndoom
+      // #5") so it shows up that way everywhere the item appears later -
+      // not just in this confirm preview.
+      name: this.formatCardTitle(card.name, card.number),
       set: card.set,
       marketValue: 0,
       catalogCardId: card.id
@@ -178,13 +191,13 @@ class CardSearchUI {
 
     const pricePromise = window.pokeWalletClient.getCard(cardId)
       .then((detail) => {
-        const { price } = window.pokeWalletClient.extractMarketPriceSGD(detail);
+        const { price, source } = window.pokeWalletClient.extractMarketPriceSGD(detail);
         this.resolvedCard.marketValue = price;
         if (price > 0) gotPrice = true;
 
         const priceLine = document.getElementById('card-search-price-line');
         if (priceLine) {
-          priceLine.textContent = price > 0 ? `S$${price.toFixed(2)}` : 'No live price found';
+          priceLine.textContent = price > 0 ? `S$${price.toFixed(2)} (${this.formatPriceSource(source)})` : 'No live price found';
         }
       })
       .catch((err) => {

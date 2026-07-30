@@ -8,6 +8,36 @@ class InventoryComponent {
     this.currentStatus = 'in_stock';
     this.searchQuery = '';
     this.viewingBinderName = null;
+    this.imageUrlCache = {}; // catalogCardId -> blob URL, so repeated re-renders don't keep re-fetching the same image
+  }
+
+  // Fetches and swaps in the real card image for raw singles that came
+  // from the catalog search (so you can tell cards apart at a glance
+  // instead of just seeing a generic ✨ icon) - fires in the background
+  // after the item list HTML is already in the DOM.
+  async loadItemImages(items) {
+    if (!window.pokeWalletClient?.configured) return;
+
+    for (const item of items) {
+      if (item.type !== 'raw' || !item.catalogCardId) continue;
+      const elId = `item-icon-${item.id}`;
+
+      if (this.imageUrlCache[item.catalogCardId]) {
+        const el = document.getElementById(elId);
+        if (el) el.innerHTML = `<img src="${this.imageUrlCache[item.catalogCardId]}" alt="${item.name}">`;
+        continue;
+      }
+
+      try {
+        const url = await window.pokeWalletClient.getImageBlobUrl(item.catalogCardId, 'low');
+        if (!url) continue;
+        this.imageUrlCache[item.catalogCardId] = url;
+        const el = document.getElementById(elId);
+        if (el) el.innerHTML = `<img src="${url}" alt="${item.name}">`;
+      } catch (err) {
+        console.warn('Item image fetch failed:', err);
+      }
+    }
   }
 
   renderInventoryPage() {
@@ -73,6 +103,8 @@ class InventoryComponent {
 
     const showBinderGroups = this.currentFilter === 'all' && this.currentStatus === 'in_stock' && !this.searchQuery;
     const binderGroups = showBinderGroups ? window.db.getBinderMetrics() : [];
+
+    this.loadItemImages(flatItems);
 
     return `
       ${binderGroups.map(b => this.renderBinderGroupCard(b)).join('')}
@@ -141,6 +173,8 @@ class InventoryComponent {
     const totalQty = items.reduce((sum, i) => sum + (i.quantity || 1), 0);
     const totalCost = items.reduce((sum, i) => sum + i.costBasis * (i.quantity || 1), 0);
     const totalValue = items.reduce((sum, i) => sum + i.marketValue * (i.quantity || 1), 0);
+
+    this.loadItemImages(items);
 
     return `
       <div class="panel-header" style="margin-bottom: 12px;">
@@ -243,44 +277,46 @@ class InventoryComponent {
     return `
       <div class="item-card">
         ${item.status === 'in_stock' ? `<span class="item-delete-btn" onclick="window.inventoryComp.deleteItem('${item.id}')">🗑️</span>` : ''}
-        <div class="item-icon-box">${icon}</div>
-        <div class="item-details">
-          <div class="item-name">${item.name}${hasMultipleQty ? ` <span style="color: var(--text-secondary); font-weight: 600;">x${qty}</span>` : ''}</div>
-          <div class="item-meta">
-            <span class="badge ${badgeClass}">${isBinderTier ? 'Price Tier' : (isSlab ? `${item.gradingCompany} ${item.grade}` : (item.grade || item.type))}</span>
-            <span>${item.set || ''}</span>
-          </div>
-          <div class="item-meta" style="margin-top: 4px;">
-            <span>Cost: <strong>$${item.costBasis.toFixed(2)}${hasMultipleQty ? '/ea' : ''}</strong></span>
-            ${hasMultipleQty ? `<span>• Total Cost: $${(item.costBasis * qty).toFixed(2)}</span>` : ''}
-            ${item.certNumber ? `<span>• Cert #${item.certNumber}</span>` : ''}
+        <div class="item-card-top">
+          <div class="item-icon-box" id="item-icon-${item.id}">${icon}</div>
+          <div class="item-details">
+            <div class="item-name">${item.name}${hasMultipleQty ? ` <span style="color: var(--text-secondary); font-weight: 600;">x${qty}</span>` : ''}</div>
+            <div class="item-meta">
+              <span class="badge ${badgeClass}">${isBinderTier ? 'Price Tier' : (isSlab ? `${item.gradingCompany} ${item.grade}` : (item.grade || item.type))}</span>
+              <span>${item.set || ''}</span>
+            </div>
+            <div class="item-meta" style="margin-top: 4px;">
+              <span>Cost: <strong>$${item.costBasis.toFixed(2)}${hasMultipleQty ? '/ea' : ''}</strong></span>
+              ${hasMultipleQty ? `<span>• Total Cost: $${(item.costBasis * qty).toFixed(2)}</span>` : ''}
+              ${item.certNumber ? `<span>• Cert #${item.certNumber}</span>` : ''}
+            </div>
           </div>
 
-          ${item.status === 'in_stock' ? `
-            <div class="item-actions">
-              <button class="btn btn-green btn-sm item-action-btn" onclick="window.posComp.openQuickSaleModal('${item.id}')">
-                ⚡ Sell
-              </button>
-              <button class="btn btn-secondary btn-sm item-action-btn" onclick="window.tradeComp.addToTrade('${item.id}')">
-                🔄 Trade
-              </button>
-              <button class="btn btn-secondary btn-sm item-action-btn" onclick="window.inventoryComp.openRestockModal('${item.id}')">
-                📥 Restock
-              </button>
+          <div class="item-pricing">
+            <div class="item-market">$${item.marketValue.toFixed(2)}${hasMultipleQty ? '/ea' : ''}</div>
+            <div class="item-margin ${margin >= 0 ? 'margin-positive' : 'margin-negative'}">
+              ${margin >= 0 ? '+' : ''}$${margin.toFixed(2)} (${marginPct.toFixed(0)}%)
             </div>
-          ` : `
-            <div class="badge ${item.status === 'sold' ? 'badge-sold' : 'badge-traded'}" style="margin-top: 6px;">
-              ${item.status === 'sold' ? '✓ SOLD' : '⇄ TRADED OUT'}
-            </div>
-          `}
-        </div>
-
-        <div class="item-pricing">
-          <div class="item-market">$${item.marketValue.toFixed(2)}${hasMultipleQty ? '/ea' : ''}</div>
-          <div class="item-margin ${margin >= 0 ? 'margin-positive' : 'margin-negative'}">
-            ${margin >= 0 ? '+' : ''}$${margin.toFixed(2)} (${marginPct.toFixed(0)}%)
           </div>
         </div>
+
+        ${item.status === 'in_stock' ? `
+          <div class="item-actions">
+            <button class="btn btn-green btn-sm item-action-btn" onclick="window.posComp.openQuickSaleModal('${item.id}')">
+              ⚡ Sell
+            </button>
+            <button class="btn btn-secondary btn-sm item-action-btn" onclick="window.tradeComp.addToTrade('${item.id}')">
+              🔄 Trade
+            </button>
+            <button class="btn btn-secondary btn-sm item-action-btn" onclick="window.inventoryComp.openRestockModal('${item.id}')">
+              📥 Restock
+            </button>
+          </div>
+        ` : `
+          <div class="badge ${item.status === 'sold' ? 'badge-sold' : 'badge-traded'}" style="margin-top: 6px;">
+            ${item.status === 'sold' ? '✓ SOLD' : '⇄ TRADED OUT'}
+          </div>
+        `}
       </div>
     `;
   }

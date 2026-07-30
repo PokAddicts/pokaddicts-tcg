@@ -159,10 +159,10 @@ class CardSearchUI {
       // native-script name rather than an English one (e.g. Magikarp #080
       // is "コイキング"), so typing the English name/number never matches it
       // through the English-only search above - try the Japanese catalog
-      // too (strict number+name match, same logic the scanner uses) when
-      // the query includes a number and the English search came up thin.
+      // too (strict name match, same logic the scanner uses) whenever the
+      // English search came up thin, whether or not a number was typed.
       const { namePart, numberPart } = window.cardCatalog.parseCardQuery(query);
-      if (ranked.length < 5 && numberPart) {
+      if (ranked.length < 5 && namePart) {
         const nameHints = window.cardCatalog.buildJapaneseNameHints(namePart);
         const jpMatches = await window.cardCatalog.findJapaneseMatches(numberPart, nameHints, 5);
         jpMatches.forEach(m => { if (!ranked.some(r => r.id === m.id)) ranked.push(m); });

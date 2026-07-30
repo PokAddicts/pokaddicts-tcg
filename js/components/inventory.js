@@ -32,7 +32,7 @@ class InventoryComponent {
       }
 
       try {
-        const url = await window.tcgdexClient.getImageBlobUrl(item.catalogCardId, 'low');
+        const url = await window.cardCatalog.getCardImageUrl(item.catalogCardId, 'low');
         if (!url) return;
         this.imageUrlCache[item.catalogCardId] = url;
         const el = document.getElementById(elId);

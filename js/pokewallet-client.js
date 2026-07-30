@@ -47,6 +47,19 @@ class PokeWalletClient {
     return this.request(`/cards/${encodeURIComponent(id)}`);
   }
 
+  // Used as a fallback when TCGdex has no image for a card (a real,
+  // confirmed gap for some Japanese sets/secret rares) - fetched through
+  // the same proxy, which passes binary image bytes through unchanged.
+  async getImageBlobUrl(id, size = 'low') {
+    if (!this.configured) return null;
+    const res = await fetch(`${POKEWALLET_BASE_URL}/images/${encodeURIComponent(id)}?size=${size}`, {
+      headers: this.authHeaders()
+    });
+    if (!res.ok) throw new Error(`PokeWallet image fetch failed ${res.status}`);
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+  }
+
   // TCGPlayer (USD) is the primary figure; falls back to CardMarket (EUR)
   // if a card has no TCGPlayer listing at all.
   extractMarketPrice(cardDetail) {

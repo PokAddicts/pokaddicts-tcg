@@ -248,7 +248,7 @@ class PokAddictsScanner {
     await Promise.all(this.scanList.map(async (entry) => {
       if (entry.imageUrl || !entry.catalogCardId || !window.tcgdexClient?.configured) return;
       try {
-        const url = await window.tcgdexClient.getImageBlobUrl(entry.catalogCardId, 'low');
+        const url = await window.cardCatalog.getCardImageUrl(entry.catalogCardId, 'low');
         if (!url) return;
         entry.imageUrl = url;
         const el = document.getElementById(`scan-chip-thumb-${entry.tempId}`);
@@ -267,7 +267,7 @@ class PokAddictsScanner {
     if (!top || !top.catalogCardId || !window.tcgdexClient?.configured) return;
 
     try {
-      const url = await window.tcgdexClient.getImageBlobUrl(top.catalogCardId, 'low');
+      const url = await window.cardCatalog.getCardImageUrl(top.catalogCardId, 'low');
       const el = document.getElementById('scanner-result-thumb-0');
       if (url && el) el.innerHTML = `<img src="${url}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 8px;" alt="${top.name}">`;
     } catch (err) {
@@ -431,7 +431,7 @@ class PokAddictsScanner {
     // card will never turn up in an English-only search regardless of
     // what Gemini thought the language was.
     const wantJapanese = this.scanLanguage === 'jap' || primary.isJapanese || matches.length === 0;
-    if (wantJapanese && primary.number) {
+    if (wantJapanese && primary.name) {
       const nameHints = window.cardCatalog.buildJapaneseNameHints(primary.name);
       const jpMatches = await window.cardCatalog.findJapaneseMatches(primary.number, nameHints, 6);
 
@@ -726,7 +726,7 @@ class PokAddictsScanner {
       }
     }
 
-    if (matches.length === 0 && number) {
+    if (matches.length === 0 && name) {
       const nameHints = window.cardCatalog.buildJapaneseNameHints(name);
       matches = await window.cardCatalog.findJapaneseMatches(number, nameHints, 3);
     }

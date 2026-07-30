@@ -300,30 +300,32 @@ class CardCatalog {
   }
 
   // Same idea as searchLocal, but restricted to one set-language edition
-  // (e.g. 'ja'), matched by NUMBER first and then REQUIRING a name-hint
-  // match - not just as a tiebreaker. A card number is reused across
-  // hundreds of unrelated species across all the sets in a language (e.g.
-  // ~50+ completely different Pokemon all use number "080" across
-  // Japanese sets), so number alone is nowhere near enough signal; a
-  // "match" that's actually the wrong species is worse than showing no
-  // match at all. nameHints should include both Gemini's raw English
-  // guess and (via scanner.js's translateEnglishToJapanese) a guessed
-  // native-script name, since TCGdex's Japanese catalog inconsistently
-  // stores cards under either an English or Japanese name.
+  // (e.g. 'ja'), and ALWAYS REQUIRING a name-hint match - not just as a
+  // tiebreaker. A card number is reused across hundreds of unrelated
+  // species across all the sets in a language (e.g. ~50+ completely
+  // different Pokemon all use number "080" across Japanese sets), so
+  // number alone is nowhere near enough signal; a "match" that's actually
+  // the wrong species is worse than showing no match at all. numberQuery
+  // is optional - a name-only search (no number typed) still requires a
+  // name-hint match, just across every number in that language, the same
+  // way a name-only search of the English catalog would. nameHints should
+  // include both an English guess and (via translateEnglishToJapanese) a
+  // guessed native-script name, since TCGdex's Japanese catalog
+  // inconsistently stores cards under either an English or Japanese name.
   searchLocalByLanguage(numberQuery, languageCode, limit = 15, nameHints = []) {
-    if (!numberQuery) return [];
     const lang = languageCode.toLowerCase();
-    const queryNum = parseInt(numberQuery, 10);
-    if (isNaN(queryNum)) return [];
     const hints = nameHints.filter(Boolean).map(h => h.toLowerCase());
     if (hints.length === 0) return [];
+    const queryNum = numberQuery ? parseInt(numberQuery, 10) : null;
 
     const matches = [];
     for (const c of this.cards) {
       if (!(c.language || '').toLowerCase().startsWith(lang)) continue;
-      const leadingDigits = (c.number || '').toString().match(/^0*(\d+)/);
-      const cardNum = leadingDigits ? parseInt(leadingDigits[1], 10) : null;
-      if (cardNum !== queryNum) continue;
+      if (queryNum !== null) {
+        const leadingDigits = (c.number || '').toString().match(/^0*(\d+)/);
+        const cardNum = leadingDigits ? parseInt(leadingDigits[1], 10) : null;
+        if (cardNum !== queryNum) continue;
+      }
       if (!hints.some(h => (c.name || '').toLowerCase().includes(h))) continue;
 
       matches.push(c);
@@ -350,12 +352,37 @@ class CardCatalog {
   }
 
   // Looks for a known Japanese species name as a substring of the given
-  // text and returns the matching official English name. Covers Gen 1-7 -
-  // a species not in the table (e.g. very recent Gen 8/9 prints) falls
-  // back to using the raw text as-is.
+  // text and rebuilds the whole name in English around it, rather than
+  // just returning the bare species alone - a card like "メガリザードンXex"
+  // (Mega Charizard X ex) would otherwise translate down to just
+  // "Charizard", losing the Mega/X/ex modifiers that actually distinguish
+  // it from a regular Charizard. Handles the small fixed set of Japanese
+  // prefix words that precede a species name (Mega Evolution + the four
+  // regional forms); anything else before/after the species (trainer
+  // names in possessive form, card-type suffixes not already in Latin
+  // script) is left as-is since there's no lookup table for those. Covers
+  // Gen 1-7 species - a species not in the table (e.g. very recent Gen
+  // 8/9 prints), or a Trainer/Energy card with no species name in it at
+  // all, returns null and the raw text is used as a fallback by callers.
   translateJapaneseName(text) {
+    if (!text) return null;
     const bestMatch = this.findJapaneseSpeciesMatch(text);
-    return bestMatch ? window.POKEMON_JP_NAMES[bestMatch] : null;
+    if (!bestMatch) return null;
+
+    const idx = text.indexOf(bestMatch);
+    let before = text.slice(0, idx).trim();
+    const after = text.slice(idx + bestMatch.length).trim();
+    const english = window.POKEMON_JP_NAMES[bestMatch];
+
+    const prefixTranslations = { 'メガ': 'Mega', 'アローラ': 'Alolan', 'ガラル': 'Galarian', 'ヒスイ': 'Hisuian', 'パルデア': 'Paldean' };
+    for (const [jp, en] of Object.entries(prefixTranslations)) {
+      if (before.endsWith(jp)) {
+        before = (before.slice(0, -jp.length).trim() + ' ' + en).trim();
+        break;
+      }
+    }
+
+    return [before, english, after].filter(Boolean).join(' ').trim();
   }
 
   // Reverse of POKEMON_JP_NAMES (English -> Japanese), built once on first
@@ -394,18 +421,20 @@ class CardCatalog {
     return [...new Set(hints.filter(Boolean))];
   }
 
-  // Strict number+name-hint search against TCGdex's Japanese catalog: a
-  // card only counts as a match if its name actually matches one of the
-  // hints (an English guess, or its reverse-translated Japanese guess) -
-  // a card number is reused across dozens of unrelated species within the
-  // Japanese card pool (~50+ completely different Pokemon all share
-  // number "080" alone), so a same-numbered-but-wrong-species result is
-  // worse than no result at all. Local cache first, live fallback. Shared
-  // by both the scanner (js/scanner.js) and the manual card search widget
+  // Strict name-hint search against TCGdex's Japanese catalog (optionally
+  // narrowed further by number, if one was given) - a card only counts as
+  // a match if its name actually matches one of the hints (an English
+  // guess, or its reverse-translated Japanese guess). A card number alone
+  // is reused across dozens of unrelated species within the Japanese card
+  // pool (~50+ completely different Pokemon all share number "080"
+  // alone), so a same-numbered-but-wrong-species result is worse than no
+  // result at all - and a name with no number at all should still be
+  // searchable, the same way a name-only search of the English catalog
+  // already is. Local cache first, live fallback. Shared by both the
+  // scanner (js/scanner.js) and the manual card search widget
   // (js/card-search-ui.js), so typing a Japanese card's English name into
   // Intake/Trade search works the same way scanning it does.
   async findJapaneseMatches(number, nameHints, limit = 6) {
-    if (!number) return [];
     const hints = nameHints.filter(Boolean);
     if (hints.length === 0) return [];
 
@@ -413,11 +442,26 @@ class CardCatalog {
 
     if (matches.length === 0 && window.tcgdexClient?.configured) {
       try {
-        const results = await window.tcgdexClient.searchCards(number, { limit: 20, lang: 'ja' });
+        // The live endpoint needs some text to search on - prefer a
+        // Japanese-script hint if one was built (translateEnglishToJapanese
+        // succeeded), since TCGdex's Japanese catalog inconsistently
+        // stores cards under either an English or native-script name and
+        // the native-script one is more likely to actually hit.
+        const jpHint = hints.find(h => /[぀-ヿ一-鿿]/.test(h));
+        const queryText = [jpHint || hints[0], number].filter(Boolean).join(' ').trim();
+        const results = await window.tcgdexClient.searchCards(queryText, { limit: 20, lang: 'ja' });
         const liveCards = results.map(r => window.cardSearchUI.normalizeLiveSearchResult(r, 'ja'));
         await this.cacheLiveResults(liveCards);
         const lowerHints = hints.map(h => h.toLowerCase());
-        matches = liveCards.filter(c => lowerHints.some(h => (c.name || '').toLowerCase().includes(h))).slice(0, limit);
+        const queryNum = number ? parseInt(number, 10) : null;
+        matches = liveCards.filter(c => {
+          if (queryNum !== null) {
+            const leadingDigits = (c.number || '').toString().match(/^0*(\d+)/);
+            const cardNum = leadingDigits ? parseInt(leadingDigits[1], 10) : null;
+            if (cardNum !== queryNum) return false;
+          }
+          return lowerHints.some(h => (c.name || '').toLowerCase().includes(h));
+        }).slice(0, limit);
       } catch (err) {
         console.warn('Live Japanese-edition search failed:', err);
       }
@@ -442,6 +486,34 @@ class CardCatalog {
 
   getCardById(id) {
     return this.cards.find(c => c.id === id) || null;
+  }
+
+  // Fetches a card's image, falling back to PokeWallet when TCGdex has
+  // none - a real, confirmed gap for some Japanese sets/secret rares
+  // (TCGdex simply has no image asset uploaded for them yet). Runs
+  // concurrently with whatever price fetch a caller is also doing for the
+  // same card, since callers await this alongside a separate price
+  // promise rather than one blocking the other.
+  async getCardImageUrl(catalogCardId, size = 'low') {
+    try {
+      const url = await window.tcgdexClient.getImageBlobUrl(catalogCardId, size);
+      if (url) return url;
+    } catch (err) {
+      console.warn('TCGdex image fetch failed:', err);
+    }
+
+    if (!window.pokeWalletClient?.configured) return null;
+    try {
+      const card = this.getCardById(catalogCardId);
+      if (!card) return null;
+      const displayName = this.translateJapaneseName(card.name) || card.name;
+      const match = await window.pokeWalletClient.findCardByNameAndNumber(displayName, card.number);
+      if (!match) return null;
+      return await window.pokeWalletClient.getImageBlobUrl(match.id, size);
+    } catch (err) {
+      console.warn('PokeWallet image fallback failed:', err);
+      return null;
+    }
   }
 
   // Called after a confirm-step lookup finds neither an image nor a

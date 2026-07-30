@@ -32,6 +32,28 @@ const CARD_CATALOG_SYNC_STATE_KEY = 'pokaddicts_catalog_sync_state_v3';
 // pulls a whole set's cards in one shot (no pagination needed).
 const SYNC_REQUEST_DELAY_MS = 150;
 
+// Builds the printed-style "080/073" number string - the denominator is
+// zero-padded to match the card's own digit width when it came back
+// shorter (e.g. "73" -> "073" alongside localId "080").
+//
+// Uses "official", not TCGdex's "total" - secret/bonus rares are numbered
+// BEYOND the official set count but still print the official count as
+// their own denominator (that's literally what makes them "secret": e.g.
+// Champion's Path's Charizard VMAX secret rare is card 74 of a 73-card
+// set, printed as "74/73", and its Charizard V secret rare is "79/73" -
+// verified directly against real PokeWallet card records, same pattern as
+// the original SV1a Magikarp case ("080/073") that surfaced this. An
+// earlier attempt to validate this via aggregate per-SET card counts
+// (rather than real individual printed numbers) wrongly concluded "total"
+// was more often correct - that was comparing the wrong signal (how many
+// cards PokeWallet has indexed for a set, not what's printed on any one
+// of them) and got reverted.
+function formatCardNumber(localId, official) {
+  if (!official) return localId || '';
+  const officialStr = String(official).padStart((localId || '').length, '0');
+  return `${localId}/${officialStr}`;
+}
+
 // raw: TCGdex's brief per-card shape from a set's card list -
 // { id, localId, name, image }. set: { id, name, total } for the
 // enclosing set. lang: 'en' | 'ja'.
@@ -41,7 +63,7 @@ function normalizeCatalogCard(raw, set, lang) {
     name: raw.name || 'Unknown Card',
     set: set.name || '',
     setId: set.id || '',
-    number: set.total ? `${raw.localId}/${set.total}` : (raw.localId || ''),
+    number: formatCardNumber(raw.localId, set.total),
     language: lang,
     image: raw.image || ''
   };
@@ -478,8 +500,10 @@ class CardCatalog {
         let allSets = [];
         for (const lang of languages) {
           const setsRes = await window.tcgdexClient.listSets(lang);
+          // "official" (not "total" - see formatCardNumber()'s comment for
+          // why) is what's actually printed on the card.
           allSets = allSets.concat((setsRes || []).map(s => ({
-            id: s.id, name: s.name, language: lang, total: s.cardCount?.total || 0
+            id: s.id, name: s.name, language: lang, total: s.cardCount?.official || s.cardCount?.total || 0
           })));
         }
         this.syncState.sets = allSets;
@@ -492,7 +516,7 @@ class CardCatalog {
 
         const res = await window.tcgdexClient.getSetCards(set.id, set.language);
         const cardsRaw = res.cards || [];
-        const total = res.cardCount?.total || set.total;
+        const total = res.cardCount?.official || res.cardCount?.total || set.total;
         const cards = cardsRaw.map(c => normalizeCatalogCard(c, { id: set.id, name: res.name || set.name, total }, set.language));
 
         await this.saveCards(cards);
@@ -539,3 +563,6 @@ class CardCatalog {
 }
 
 window.cardCatalog = new CardCatalog();
+// Shared with card-search-ui.js's normalizeLiveSearchResult() so a live
+// TCGdex search result is formatted identically to a synced catalog card.
+window.formatCardNumber = formatCardNumber;

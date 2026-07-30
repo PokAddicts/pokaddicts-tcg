@@ -87,7 +87,7 @@ class CardSearchUI {
       name: raw.name || 'Unknown Card',
       set: setInfo?.name || '',
       setId,
-      number: total ? `${raw.localId}/${total}` : (raw.localId || ''),
+      number: window.formatCardNumber(raw.localId, total),
       language: setInfo?.language || lang,
       image: raw.image || ''
     };

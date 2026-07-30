@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0f19">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>PokAddicts TCG - Tradeshow Inventory & Accounting</title>
+  <link rel="icon" href="assets/logo.jpg">
+
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <div id="app-container">
+
+    <!-- Top Header Bar -->
+    <header class="app-header">
+      <div class="brand-title">
+        <img src="assets/logo.jpg" alt="PokAddicts TCG" class="brand-icon brand-logo-img">
+        <span>PokAddicts TCG</span>
+      </div>
+
+      <div id="team-member-badge" class="room-badge" onclick="window.app.openNameSetupModal()" title="Tap to change your name">
+        <span class="status-dot"></span>
+        <span>Set Your Name</span>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="content-area">
+      
+      <!-- Tab 1: Inventory View -->
+      <section id="inventory-page" class="tab-page active">
+        <!-- Rendered by js/components/inventory.js -->
+      </section>
+
+      <!-- Tab 2: Rapid Intake Studio -->
+      <section id="intake-page" class="tab-page">
+        <!-- Rendered by js/components/intake.js -->
+      </section>
+
+      <!-- Tab 3: Trade Studio -->
+      <section id="trade-page" class="tab-page">
+        <!-- Rendered by js/components/trade.js -->
+      </section>
+
+      <!-- Tab 4: POS Quick Register -->
+      <section id="pos-page" class="tab-page">
+        <!-- Rendered by js/components/pos.js -->
+      </section>
+
+      <!-- Tab 5: Analytics Dashboard -->
+      <section id="analytics-page" class="tab-page">
+        <!-- Rendered by js/components/analytics.js -->
+      </section>
+
+    </main>
+
+    <!-- Quick Scan Floating Action Button (FAB) -->
+    <button id="fab-scan" class="fab-scan" title="Scan & Verify Card">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/>
+        <line x1="7" y1="12" x2="17" y2="12"/>
+      </svg>
+    </button>
+
+    <!-- Bottom Navigation Bar -->
+    <nav class="bottom-nav">
+      <button class="nav-item active" data-tab="inventory">
+        <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        <span>Inventory</span>
+      </button>
+
+      <button class="nav-item" data-tab="intake">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        <span>Intake</span>
+      </button>
+
+      <!-- Center FAB slot spacer -->
+      <div style="flex: 0.8;"></div>
+
+      <button class="nav-item" data-tab="trade">
+        <svg viewBox="0 0 24 24"><path d="M7 16V4M7 4L3 8M7 4L11 8M17 8V20M17 20L21 16M17 20L13 16"/></svg>
+        <span>Trade</span>
+      </button>
+
+      <button class="nav-item" data-tab="analytics">
+        <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        <span>Accounting</span>
+      </button>
+    </nav>
+
+  </div>
+
+  <!-- Toast Notification Bar -->
+  <div id="app-toast" class="toast"></div>
+
+  <!-- Startup Loading Overlay -->
+  <div id="app-loading-overlay" style="position:fixed; inset:0; background:var(--bg-primary); z-index:500; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px;">
+    <div class="brand-icon" style="width:44px; height:44px; font-size:20px;">⚡</div>
+    <div style="color: var(--text-secondary); font-size: 0.9rem;">Loading booth data...</div>
+  </div>
+
+  <!-- Modal 0: Team Name Setup -->
+  <div id="name-modal" class="modal-overlay">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 class="modal-title">🏷️ Set Your Name</h3>
+        <button class="close-btn" onclick="window.app.closeNameSetupModal()">✕</button>
+      </div>
+
+      <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 16px;">
+        Used to tag who bought, sold, or traded each card (e.g. "Sold by Alex").
+      </p>
+
+      <form onsubmit="window.app.handleNameSetupSubmit(event)">
+        <div class="form-group">
+          <label class="form-label">Your Name / Team Tag</label>
+          <input type="text" id="name-setup-input" class="form-control" placeholder="e.g. Alex or H.C (Owner)" required>
+        </div>
+
+        <button type="submit" class="btn btn-primary">✓ Save Name</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal 1: Quick Scan Studio Overlay -->
+  <div id="scanner-modal" class="modal-overlay">
+    <div class="modal-container scanner-fullscreen">
+      <button class="close-btn scanner-fullscreen-close" onclick="window.scanner.closeScannerModal()">✕</button>
+      <div id="scanner-modal-body" style="position: relative; width: 100%; height: 100%;">
+        <!-- Dynamically rendered by window.scanner -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Create Event (shared by POS + Trade Studio + Analytics) -->
+  <div id="event-modal" class="modal-overlay">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 class="modal-title">🎪 New Tradeshow / Event</h3>
+        <button class="close-btn" onclick="document.getElementById('event-modal').classList.remove('active')">✕</button>
+      </div>
+      <form onsubmit="window.app.handleCreateEventSubmit(event)">
+        <div class="form-group">
+          <label class="form-label">Event Name</label>
+          <input type="text" id="event-modal-name-input" class="form-control" placeholder="e.g. SCCS Tradeshow" required>
+        </div>
+        <button type="submit" class="btn btn-primary">+ Create Event</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Edit Tradeshow Expenses (Analytics tab) -->
+  <div id="event-expenses-modal" class="modal-overlay">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 class="modal-title">💸 Tradeshow Expenses</h3>
+        <button class="close-btn" onclick="document.getElementById('event-expenses-modal').classList.remove('active')">✕</button>
+      </div>
+      <p id="event-expenses-modal-sub" style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 16px;"></p>
+      <form onsubmit="window.analyticsComp.handleExpensesSubmit(event)">
+        <div class="form-group">
+          <label class="form-label">Total Expenses ($)</label>
+          <input type="number" id="event-expenses-input" class="form-control" placeholder="Booth fee + travel + table rental, etc." step="0.01" min="0">
+        </div>
+        <button type="submit" class="btn btn-primary">Save Expenses</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Create Binder (shared by Inventory page + Intake) -->
+  <div id="binder-modal" class="modal-overlay">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 class="modal-title">🗂️ New Binder</h3>
+        <button class="close-btn" onclick="document.getElementById('binder-modal').classList.remove('active')">✕</button>
+      </div>
+      <form onsubmit="window.app.handleCreateBinderSubmit(event)">
+        <div class="form-group">
+          <label class="form-label">Binder Name</label>
+          <input type="text" id="binder-modal-name-input" class="form-control" placeholder="e.g. Jap AR Binder" required>
+        </div>
+        <button type="submit" class="btn btn-primary">+ Create Binder</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Trade Quantity Picker (partial give from a binder tier) -->
+  <div id="trade-qty-modal" class="modal-overlay">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 class="modal-title">🔄 Select Quantity</h3>
+        <button class="close-btn" onclick="document.getElementById('trade-qty-modal').classList.remove('active')">✕</button>
+      </div>
+
+      <p id="trade-qty-modal-title" style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;"></p>
+      <p id="trade-qty-modal-sub" style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 16px;"></p>
+
+      <form onsubmit="window.tradeComp.handleTradeQtySubmit(event)">
+        <div class="form-group">
+          <label class="form-label">Quantity to Give</label>
+          <input type="number" id="trade-qty-input" class="form-control" min="1" step="1" required>
+        </div>
+        <button type="submit" class="btn btn-primary">+ Add to Trade Out</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Add Price Tier (Binder detail view on Inventory page) -->
+  <div id="add-tier-modal" class="modal-overlay">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 class="modal-title">🗂️ Add Price Tier</h3>
+        <button class="close-btn" onclick="document.getElementById('add-tier-modal').classList.remove('active')">✕</button>
+      </div>
+      <form onsubmit="window.inventoryComp.handleAddTierSubmit(event)">
+        <div class="form-group">
+          <label class="form-label">Tier Label</label>
+          <input type="text" id="add-tier-label-input" class="form-control" placeholder="e.g. $4 Tier" required>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+          <div class="form-group">
+            <label class="form-label">Qty</label>
+            <input type="number" id="add-tier-qty-input" class="form-control" placeholder="Qty" step="1" min="1" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Cost/card $</label>
+            <input type="number" id="add-tier-cost-input" class="form-control" placeholder="0.00" step="0.01" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Resale/card $</label>
+            <input type="number" id="add-tier-resale-input" class="form-control" placeholder="0.00" step="0.01">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary">+ Add Tier</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Restock Item (blends new units into existing cost basis) -->
+  <div id="restock-modal" class="modal-overlay">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 class="modal-title">📥 Restock Item</h3>
+        <button class="close-btn" onclick="document.getElementById('restock-modal').classList.remove('active')">✕</button>
+      </div>
+      <p id="restock-modal-sub" style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 16px;"></p>
+      <form onsubmit="window.inventoryComp.handleRestockSubmit(event)">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div class="form-group">
+            <label class="form-label">Additional Qty</label>
+            <input type="number" id="restock-qty-input" class="form-control" placeholder="1" step="1" min="1" value="1" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Cost/unit ($)</label>
+            <input type="number" id="restock-cost-input" class="form-control" placeholder="0.00" step="0.01">
+          </div>
+        </div>
+        <div style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 14px;">
+          Bought this batch at a different price? Enter its cost here - it'll be weighted-averaged into the existing cost basis. Leave blank to reuse the current cost.
+        </div>
+        <button type="submit" class="btn btn-primary">+ Restock</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Add Card Received (Trade Studio) -->
+  <div id="acquired-item-modal" class="modal-overlay">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 class="modal-title">📥 Add Card Received</h3>
+        <button class="close-btn" onclick="document.getElementById('acquired-item-modal').classList.remove('active')">✕</button>
+      </div>
+
+      <div id="acquired-item-modal-body">
+        <!-- Dynamically rendered by window.tradeComp -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 3: Quick POS Register Overlay -->
+  <div id="pos-modal" class="modal-overlay">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 class="modal-title">⚡ Quick Sale Register</h3>
+        <button class="close-btn" onclick="document.getElementById('pos-modal').classList.remove('active')">✕</button>
+      </div>
+      <div id="pos-modal-body">
+        <!-- Dynamically rendered by window.posComp -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Application Logic Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-client.js"></script>
+  <script src="js/pokemon_data.js"></script>
+  <script src="js/pokemon-jp-names.js"></script>
+  <script src="js/cardsight-client.js"></script>
+  <script src="js/pokewallet-client.js"></script>
+  <script src="js/fx-rates.js"></script>
+  <script src="js/card-catalog.js"></script>
+  <script src="js/card-search-ui.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/sync.js"></script>
+  <script src="js/scanner.js"></script>
+  <script src="js/components/inventory.js"></script>
+  <script src="js/components/intake.js"></script>
+  <script src="js/components/trade.js"></script>
+  <script src="js/components/pos.js"></script>
+  <script src="js/components/analytics.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

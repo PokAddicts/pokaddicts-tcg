@@ -7,27 +7,30 @@
    itself well under that cap and can take a while for the full multi-
    language database - it resumes automatically across sessions.
 
-   Get a free API key at https://www.pokewallet.io/ (no card required) and
-   paste it below.
+   The real PokeWallet key never reaches the browser: every call here goes
+   through a Supabase Edge Function (supabase/functions/pokewallet-proxy)
+   that holds POKEWALLET_API_KEY as a server-side secret and forwards the
+   request as-is (JSON or binary image, whichever the endpoint returns).
+   The only credential shipped here is Supabase's own publishable key
+   (js/supabase-client.js) - that one's meant to be public by design.
    ========================================================================== */
 
-const POKEWALLET_API_KEY = 'pk_live_aeef5aec40e0857e154b48ba6ad4291671414cf26c1c6895';
-const POKEWALLET_BASE_URL = 'https://api.pokewallet.io';
+const POKEWALLET_BASE_URL = `${typeof SUPABASE_URL !== 'undefined' ? SUPABASE_URL : ''}/functions/v1/pokewallet-proxy`;
 
 class PokeWalletClient {
   constructor() {
-    this.configured = /^pk_(live|test)_/.test(POKEWALLET_API_KEY || '');
+    this.configured = typeof SUPABASE_URL !== 'undefined' && SUPABASE_URL.startsWith('http');
     if (!this.configured) {
-      console.warn('PokeWallet is not configured yet - fill in POKEWALLET_API_KEY in js/pokewallet-client.js. Card catalog sync and price lookups are disabled until then.');
+      console.warn('Supabase is not configured - PokeWallet catalog sync and price lookups are disabled until js/supabase-client.js has a real project URL.');
     }
   }
 
   authHeaders() {
-    return { 'X-API-Key': POKEWALLET_API_KEY };
+    return { 'apiKey': SUPABASE_ANON_KEY };
   }
 
   async request(path) {
-    if (!this.configured) throw new Error('PokeWallet API key not configured');
+    if (!this.configured) throw new Error('PokeWallet proxy not configured');
     const res = await fetch(`${POKEWALLET_BASE_URL}${path}`, { headers: this.authHeaders() });
     if (!res.ok) throw new Error(`PokeWallet API error ${res.status}`);
     return res.json();

@@ -1078,11 +1078,27 @@ select.form-control {
   padding: 12px;
   min-width: 0; /* grid items default to min-width:auto, which lets long unbroken text (card names, prices) force the column wider than its 1fr share and push the whole layout off-screen on narrow phones */
   overflow-wrap: break-word;
+  display: flex;
+  flex-direction: column;
 }
 
 .trade-column .trade-item-pill > span {
   min-width: 0; /* same fix, one level down - flex items have the same default */
   overflow-wrap: break-word;
+}
+
+/* Action button at the bottom of each trade column (+ Pick Item / +
+   Add Card) - margin-top:auto pins both to the same height regardless of
+   how many items are listed above them in each column, and height:auto +
+   white-space:normal let the label wrap onto two lines instead of
+   overflowing the column on narrow phones. */
+.trade-action-btn {
+  margin-top: auto;
+  height: auto;
+  min-height: 36px;
+  white-space: normal;
+  line-height: 1.3;
+  padding: 8px 10px;
 }
 
 .trade-col-title {

@@ -64,20 +64,23 @@ class TradeComponent {
             Mkt Est: <strong style="color: var(--accent-cyan);">$${givenTotalMkt.toFixed(2)}</strong>
           </div>
 
-          ${givenItemsList.length === 0 ? `
-            <div style="font-size: 0.75rem; color: var(--text-muted); padding: 10px; text-align: center;">No items selected. Tap 'Trade' on any inventory item.</div>
-          ` : givenItemsList.map(item => `
-            <div class="trade-item-pill">
-              <span>
-                ${item.name}${item.tradeQuantity > 1 ? ` <span style="color: var(--text-secondary);">(x${item.tradeQuantity})</span>` : ''}
-                <div style="font-size: 0.7rem; color: var(--text-muted);">Cost: $${(item.costBasis * item.tradeQuantity).toFixed(2)} • Mkt: $${(item.marketValue * item.tradeQuantity).toFixed(2)}</div>
-              </span>
-              <span style="color: var(--accent-red); cursor: pointer;" onclick="window.tradeComp.removeFromGiven('${item.id}')">✕</span>
-            </div>
-          `).join('')}
+          <div style="flex: 1;">
+            ${givenItemsList.length === 0 ? `
+              <div style="font-size: 0.75rem; color: var(--text-muted); padding: 10px; text-align: center;">No items selected. Tap 'Trade' on any inventory item.</div>
+            ` : givenItemsList.map(item => `
+              <div class="trade-item-pill" style="flex-wrap: wrap;">
+                <span>
+                  ${item.name}${item.tradeQuantity > 1 ? ` <span style="color: var(--text-secondary);">(x${item.tradeQuantity})</span>` : ''}
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">Cost: $${(item.costBasis * item.tradeQuantity).toFixed(2)}</div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted);">Mkt: $${(item.marketValue * item.tradeQuantity).toFixed(2)}</div>
+                </span>
+                <span style="color: var(--accent-red); cursor: pointer;" onclick="window.tradeComp.removeFromGiven('${item.id}')">✕</span>
+              </div>
+            `).join('')}
+          </div>
 
-          <button class="btn btn-secondary btn-sm" style="margin-top: 8px; width: 100%;" onclick="window.app.switchTab('inventory')">
-            + Pick from Inventory
+          <button class="btn btn-secondary btn-sm trade-action-btn" onclick="window.app.switchTab('inventory')">
+            + Pick Item
           </button>
         </div>
 
@@ -88,17 +91,22 @@ class TradeComponent {
             Total Mkt Est: <strong style="color: var(--accent-cyan);">$${acquiredTotalMkt.toFixed(2)}</strong>
           </div>
 
-          ${this.acquiredItems.length === 0 ? `
-            <div style="font-size: 0.75rem; color: var(--text-muted); padding: 10px; text-align: center;">Add incoming cards below.</div>
-          ` : this.acquiredItems.map((item, idx) => `
-            <div class="trade-item-pill">
-              <span>${item.name} ($${item.marketValue})</span>
-              <span style="color: var(--accent-red); cursor: pointer;" onclick="window.tradeComp.removeAcquiredItem(${idx})">✕</span>
-            </div>
-          `).join('')}
+          <div style="flex: 1;">
+            ${this.acquiredItems.length === 0 ? `
+              <div style="font-size: 0.75rem; color: var(--text-muted); padding: 10px; text-align: center;">Add incoming cards below.</div>
+            ` : this.acquiredItems.map((item, idx) => `
+              <div class="trade-item-pill" style="flex-wrap: wrap;">
+                <span>
+                  ${item.name}
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">Mkt: $${(parseFloat(item.marketValue) || 0).toFixed(2)}</div>
+                </span>
+                <span style="color: var(--accent-red); cursor: pointer;" onclick="window.tradeComp.removeAcquiredItem(${idx})">✕</span>
+              </div>
+            `).join('')}
+          </div>
 
-          <button class="btn btn-outline-gold btn-sm" style="margin-top: 8px; width: 100%;" onclick="window.tradeComp.openAddAcquiredModal()">
-            + Add Card Received
+          <button class="btn btn-outline-gold btn-sm trade-action-btn" onclick="window.tradeComp.openAddAcquiredModal()">
+            + Add Card
           </button>
         </div>
       </div>

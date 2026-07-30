@@ -211,7 +211,20 @@ class CardCatalog {
   parseCardQuery(query) {
     const trimmed = (query || '').replace(/#/g, ' ').trim().replace(/\s+/g, ' ');
 
-    let match = trimmed.match(/^(.*?)\s*(\d+)$/);
+    // "110/080" style - the printed numerator/denominator format people
+    // type verbatim off the card. Checked BEFORE the plain-trailing-number
+    // case below, or that one would greedily swallow the "/080" into the
+    // name (nothing but whitespace separates a name from a trailing
+    // number in that pattern, and "/" isn't whitespace) and search by the
+    // denominator instead - which is meaningless on its own since many
+    // completely unrelated cards share the same set-size denominator.
+    // Only the numerator (this card's own number) is meaningful to search.
+    let match = trimmed.match(/^(.*?)\s*(\d+)\s*\/\s*\d+$/);
+    if (match) {
+      return { namePart: match[1].toLowerCase().trim(), numberPart: match[2] };
+    }
+
+    match = trimmed.match(/^(.*?)\s*(\d+)$/);
     if (match) {
       return { namePart: match[1].toLowerCase().trim(), numberPart: match[2] };
     }

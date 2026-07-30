@@ -247,13 +247,20 @@ class CardSearchUI {
     const pricePromise = window.tcgdexClient.getCard(cardId, cardLang)
       .catch(() => window.tcgdexClient.getCard(cardId, cardLang === 'ja' ? 'en' : 'ja'))
       .then((detail) => {
-        const { price, source } = window.tcgdexClient.extractMarketPriceSGD(detail);
-        this.resolvedCard.marketValue = price;
-        if (price > 0) gotPrice = true;
+        // TCGPlayer (US) and CardMarket (EU) are genuinely different
+        // marketplaces and can diverge quite a bit - show both whenever
+        // TCGdex has them, rather than silently picking one. The stored
+        // marketValue still uses just the first (TCGPlayer-preferred) one,
+        // same as before, since cost/margin tracking needs a single number.
+        const allPrices = window.tcgdexClient.extractAllMarketPricesSGD(detail);
+        this.resolvedCard.marketValue = allPrices[0]?.price || 0;
+        if (allPrices.length > 0) gotPrice = true;
 
         const priceLine = document.getElementById('card-search-price-line');
         if (priceLine) {
-          priceLine.textContent = price > 0 ? `S$${price.toFixed(2)} (${this.formatPriceSource(source)})` : 'No live price found';
+          priceLine.innerHTML = allPrices.length > 0
+            ? allPrices.map(p => `<div>S$${p.price.toFixed(2)} (${this.formatPriceSource(p.source)})</div>`).join('')
+            : 'No live price found';
         }
       })
       .catch((err) => {

@@ -114,6 +114,34 @@ class TCGdexClient {
     return { price: sgdPrice, source: `${source} (${currency}→SGD)` };
   }
 
+  // Unlike extractMarketPrice() (one "best" price, TCGPlayer preferred),
+  // this returns BOTH marketplace prices whenever TCGdex has them - the
+  // two are genuinely different marketplaces (TCGPlayer is the US
+  // secondary market, CardMarket is the EU one) and can diverge quite a
+  // bit, so showing both lets the user judge for themselves rather than
+  // silently picking one.
+  extractAllMarketPrices(cardDetail) {
+    const prices = [];
+
+    const tcg = cardDetail?.pricing?.tcgplayer;
+    if (tcg) {
+      const subVariant = tcg.normal || Object.values(tcg).find(v => v && typeof v === 'object' && v.marketPrice);
+      if (subVariant?.marketPrice) prices.push({ price: subVariant.marketPrice, currency: 'USD', source: 'TCGPlayer' });
+    }
+
+    const cm = cardDetail?.pricing?.cardmarket;
+    if (cm?.avg) prices.push({ price: cm.avg, currency: 'EUR', source: 'CardMarket' });
+
+    return prices;
+  }
+
+  extractAllMarketPricesSGD(cardDetail) {
+    return this.extractAllMarketPrices(cardDetail).map(p => ({
+      price: window.fxRates.convertToSGD(p.price, p.currency),
+      source: `${p.source} (${p.currency}→SGD)`
+    }));
+  }
+
   // Unlike extractMarketPrice() (one "best" price), this returns every
   // sellable sub-variant (Normal, Reverse Holofoil, 1st Edition Holofoil,
   // etc.) with its own price - the same card/set/number can have very

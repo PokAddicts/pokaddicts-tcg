@@ -264,7 +264,7 @@ class CardSearchUI {
     let gotImage = false;
     let gotPrice = false;
 
-    const imagePromise = window.tcgdexClient.getImageBlobUrl(cardId, 'low')
+    const imagePromise = window.cardCatalog.getCardImageUrl(cardId, 'low')
       .then((imageUrl) => {
         if (!imageUrl) return;
         gotImage = true;

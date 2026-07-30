@@ -162,7 +162,7 @@ class AnalyticsComponent {
         </div>
 
         ${eventMetrics.length === 0 ? `
-          <div style="font-size: 0.8rem; color: var(--text-muted); text-align: center; padding: 16px;">No tradeshows yet. Create one (e.g. "SCCS Tradeshow") to start tagging sales and trades to it from the POS Register or Trade.</div>
+          <div style="font-size: 0.8rem; color: var(--text-muted); text-align: center; padding: 16px;">No tradeshows yet. Create one to start tagging sales and trades to it from the POS Register or Trade.</div>
         ` : `
           <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px;">
             <button class="btn btn-sm ${this.eventSort === 'recent' ? 'btn-cyan' : 'btn-secondary'}" onclick="window.analyticsComp.setEventSort('recent')">Recent</button>

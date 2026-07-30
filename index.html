@@ -112,13 +112,13 @@
       </div>
 
       <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 16px;">
-        Used to tag who bought, sold, or traded each card (e.g. "Sold by Alex").
+        Used to tag who bought, sold, or traded each card (e.g. "Sold by Your Name").
       </p>
 
       <form onsubmit="window.app.handleNameSetupSubmit(event)">
         <div class="form-group">
           <label class="form-label">Your Name / Team Tag</label>
-          <input type="text" id="name-setup-input" class="form-control" placeholder="e.g. Alex or H.C (Owner)" required>
+          <input type="text" id="name-setup-input" class="form-control" placeholder="Your Name" required>
         </div>
 
         <button type="submit" class="btn btn-primary">✓ Save Name</button>
@@ -146,7 +146,7 @@
       <form onsubmit="window.app.handleCreateEventSubmit(event)">
         <div class="form-group">
           <label class="form-label">Event Name</label>
-          <input type="text" id="event-modal-name-input" class="form-control" placeholder="e.g. SCCS Tradeshow" required>
+          <input type="text" id="event-modal-name-input" class="form-control" placeholder="Name of Tradeshow" required>
         </div>
         <button type="submit" class="btn btn-primary">+ Create Event</button>
       </form>

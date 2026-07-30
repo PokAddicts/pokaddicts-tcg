@@ -1142,8 +1142,8 @@ class PokAddictsDB {
     const binderA = this.addBinder('Bulk Rares Binder');
     const binderB = this.addBinder('Jap AR Binder');
 
-    const eventA = this.addEvent('SCCS Tradeshow');
-    const eventB = this.addEvent('Toysite Comic Con');
+    const eventA = this.addEvent('Sample Tradeshow');
+    const eventB = this.addEvent('Sample Comic Con');
     this.updateEventExpenses(eventA.id, 60);
 
     // Normal intake - raw, slab, sealed (with quantity)
@@ -1163,7 +1163,7 @@ class PokAddictsDB {
       costBasis: 380, marketValue: 720, askingPrice: 700, quantity: 5
     });
 
-    // Buyback intake - a slab bought back from a customer at SCCS Tradeshow
+    // Buyback intake - a slab bought back from a customer at the Sample Tradeshow
     this.addItem({
       name: 'Umbreon VMAX Alt Art #215', set: 'Evolving Skies', type: 'slab',
       gradingCompany: 'PSA', grade: '10 GEM MT', certNumber: '65498712',
@@ -1186,7 +1186,7 @@ class PokAddictsDB {
       notes: `Binder tier intake: ${binderB.name}`
     });
 
-    // A completed sale, tagged to SCCS Tradeshow
+    // A completed sale, tagged to the Sample Tradeshow
     this.recordSale(charizard.id, 220, 'Cash', eventA.name, 1);
 
     // A trade, tagged to the other event

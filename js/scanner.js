@@ -399,11 +399,30 @@ class PokAddictsScanner {
   // several real candidates instead of one possibly-wrong answer. The raw
   // CardSight guess is kept as a fallback option too, in case the actual
   // card isn't in the PokeWallet catalog yet.
+  // Wrapped in an outer try/catch so that any unexpected failure here
+  // (a bad response shape, a rate-limited request that throws somewhere
+  // not already guarded, etc.) still falls back to CardSight's raw guess
+  // instead of bubbling up to captureAndIdentify's catch block, which
+  // would wipe out suggestions entirely and leave the scan looking dead.
   async buildCandidateList(primary, ocrHint) {
+    try {
+      return await this._buildCandidateListInner(primary, ocrHint);
+    } catch (err) {
+      console.warn('buildCandidateList failed, falling back to raw guess:', err);
+      return primary.name ? [{ name: primary.name, set: primary.set, number: primary.number, catalogCardId: '', source: 'cardsight' }] : [];
+    }
+  }
+
+  async _buildCandidateListInner(primary, ocrHint) {
     const query = [primary.name, primary.number].filter(Boolean).join(' ').trim();
+    // Local search is instant; a live PokeWallet call is not, and the free
+    // tier's rate limit (100/hour) is shared across the whole scanning
+    // session - so only reach for it when local is genuinely sparse (< 5),
+    // not just short of the full display count. Showing up to 8 results
+    // (below) only needs the network when local truly doesn't have them.
     let matches = window.cardCatalog ? window.cardCatalog.searchLocal(query, 12) : [];
 
-    if (matches.length < 8 && window.pokeWalletClient?.configured) {
+    if (matches.length < 5 && window.pokeWalletClient?.configured) {
       try {
         const res = await window.pokeWalletClient.searchCards(query, { limit: 12 });
         const liveCards = (res.results || []).map(r => window.cardSearchUI.normalizeLiveSearchResult(r));
@@ -429,9 +448,15 @@ class PokAddictsScanner {
     // still named e.g. "Pikachu", not Japanese text), so the query itself
     // stays in English (OCR's translated species name if it read Japanese
     // text, else CardSight's own guess) - only the candidate pool gets
-    // narrowed to Japanese-language sets, whenever Japanese is in play
-    // (OCR detected Japanese text, or the language toggle is set to JP).
-    const wantJapanese = this.scanLanguage === 'jap' || ocrHint?.hasJapanese;
+    // narrowed to Japanese-language sets, whenever Japanese is in play.
+    // Auto-triggering just off ocrHint.hasJapanese (a raw regex test over
+    // noisy OCR text - busy card art can false-positive on English cards)
+    // meant an extra, slower live search fired on plenty of English scans
+    // for no benefit - so the automatic path now requires OCR to have
+    // actually resolved a species name, not merely flagged Japanese-ish
+    // text. The manual JP toggle is unaffected - that's explicit intent,
+    // worth the extra call even without a resolved OCR name.
+    const wantJapanese = this.scanLanguage === 'jap' || !!ocrHint?.translatedName;
     if (wantJapanese) {
       const jpNameGuess = ocrHint?.translatedName || primary.name;
       if (jpNameGuess) {
@@ -527,7 +552,10 @@ class PokAddictsScanner {
     this.pendingIsSlab = false;
     this.view = 'capture';
     this.renderDynamicSectionOnly();
-    document.getElementById('scanner-search-name')?.focus();
+    // Deliberately no auto-focus on the search box here - that popped the
+    // on-screen keyboard immediately, making a simple "back out" feel like
+    // it was forcing you into a search instead of just returning to the
+    // camera to retake the photo.
   }
 
   confirmSuggestion(idx) {

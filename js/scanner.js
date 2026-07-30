@@ -35,12 +35,13 @@ class PokAddictsScanner {
     this.stream = null;
     this.scanList = []; // [{ tempId, name, set, type, gradingCompany, grade, condition, certNumber, catalogCardId, marketValue, imageUrl }]
 
-    this.view = 'capture'; // 'capture' | 'suggestions' | 'slabDetails' | 'finalize'
+    this.view = 'capture'; // 'capture' | 'suggestions' | 'variantPick' | 'slabDetails' | 'finalize'
 
     this.pendingSuggestions = []; // candidate cards awaiting a tap-to-confirm
     this.suggestionsExpanded = false; // false = show only the top match + "N More" link, true = show the full list
     this.pendingIsSlab = false; // whether CardSight's original detection looked like a graded slab
     this.pendingSlabSuggestion = null; // the confirmed card being filled in as a slab (grading/cost/market)
+    this.pendingVariantChoice = null; // { name, set, catalogCardId, variants } - awaiting a Normal/Holo/Reverse Holo pick
   }
 
   // --- Modal lifecycle ---
@@ -54,6 +55,7 @@ class PokAddictsScanner {
     this.suggestionsExpanded = false;
     this.pendingIsSlab = false;
     this.pendingSlabSuggestion = null;
+    this.pendingVariantChoice = null;
     this.view = 'capture';
 
     this.renderScanWorkspace();
@@ -83,7 +85,6 @@ class PokAddictsScanner {
 
   async startCamera() {
     const videoElement = document.getElementById('scanner-video');
-    const hudStatus = document.getElementById('scanner-hud-status');
 
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
@@ -92,13 +93,12 @@ class PokAddictsScanner {
           videoElement.srcObject = this.stream;
           await videoElement.play();
         }
-        if (hudStatus) hudStatus.innerText = 'Align card in the frame, then tap Capture';
-      } else if (hudStatus) {
-        hudStatus.innerText = 'Camera unavailable - use search above.';
+      } else {
+        window.app.showToast('⚠️ Camera unavailable - use search above.');
       }
     } catch (err) {
       console.warn('Camera access error:', err);
-      if (hudStatus) hudStatus.innerText = 'Camera access blocked - use search above.';
+      window.app.showToast('⚠️ Camera access blocked - use search above.');
     }
   }
 
@@ -136,7 +136,6 @@ class PokAddictsScanner {
           <div class="scanner-corner br"></div>
         </div>
       ` : ''}
-      <div id="scanner-hud-status" class="scanner-hud-text">Initializing Camera...</div>
 
       ${showScanChrome ? `
         <div class="scanner-top-bar">
@@ -173,6 +172,7 @@ class PokAddictsScanner {
 
     let html = '';
     if (this.view === 'slabDetails') html += this.renderSlabDetailsHTML();
+    else if (this.view === 'variantPick') html += this.renderVariantPickHTML();
     else if (this.view === 'suggestions') html += this.renderSuggestionsHTML();
 
     html += this.renderScannedStripHTML();
@@ -180,10 +180,10 @@ class PokAddictsScanner {
     return html;
   }
 
-  // Plain icon capture button - hidden while reviewing a suggestion or
-  // slab form so it doesn't compete for attention.
+  // Plain icon capture button - hidden while reviewing a suggestion,
+  // variant choice, or slab form so it doesn't compete for attention.
   renderCaptureControlsHTML() {
-    if (this.view === 'suggestions' || this.view === 'slabDetails') return '';
+    if (this.view === 'suggestions' || this.view === 'slabDetails' || this.view === 'variantPick') return '';
 
     return `
       <div class="scanner-controls-row">
@@ -201,7 +201,10 @@ class PokAddictsScanner {
   renderScannedStripHTML() {
     if (this.scanList.length === 0) return '';
 
+    const totalValue = this.scanList.reduce((sum, e) => sum + (e.marketValue || 0), 0);
+
     return `
+      <div class="scanner-strip-counter">📋 ${this.scanList.length} scanned • Total Mkt: $${totalValue.toFixed(2)}</div>
       <div class="scanner-scanned-strip">
         ${this.scanList.map(entry => `
           <div class="scanner-scanned-chip">
@@ -291,7 +294,6 @@ class PokAddictsScanner {
   async captureAndIdentify() {
     const video = document.getElementById('scanner-video');
     const canvas = document.getElementById('scanner-canvas');
-    const hud = document.getElementById('scanner-hud-status');
     if (!video || !canvas || !video.videoWidth) {
       window.app.showToast('⚠️ Camera not ready yet - try again in a second.');
       return;
@@ -303,19 +305,34 @@ class PokAddictsScanner {
     canvas.getContext('2d').drawImage(video, crop.x, crop.y, crop.width, crop.height, 0, 0, crop.width, crop.height);
 
     this.triggerCaptureFlash();
-    if (hud) hud.innerText = 'Identifying card...';
 
     try {
       const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
-      const detections = await window.cardSightClient.identifyCards(blob);
 
-      if (detections.length === 0) {
+      // CardSight recognizes English cards well but Japanese ones less
+      // reliably. Running a quick on-device OCR pass in parallel - just
+      // to detect Japanese text and pull a card number, both far more
+      // reliable than trying to read the full name - gives Japanese cards
+      // a second, independent chance at a correct guess.
+      const [detections, ocrHint] = await Promise.all([
+        window.cardSightClient.identifyCards(blob).catch(err => {
+          console.error('Card identification failed:', err);
+          return [];
+        }),
+        this.quickOcrHint(canvas)
+      ]);
+
+      let primary = detections[0] || null;
+      if (!primary && ocrHint?.translatedName) {
+        primary = { name: ocrHint.translatedName, number: ocrHint.number, set: '', isSlab: false };
+      }
+
+      if (!primary) {
         this.pendingSuggestions = [];
         this.view = 'capture';
         window.app.showToast('⚠️ Could not identify this card - search manually above.');
       } else {
-        const primary = detections[0];
-        this.pendingSuggestions = await this.buildCandidateList(primary);
+        this.pendingSuggestions = await this.buildCandidateList(primary, ocrHint);
         this.pendingIsSlab = primary.isSlab;
         this.suggestionsExpanded = false;
         this.view = this.pendingSuggestions.length > 0 ? 'suggestions' : 'capture';
@@ -329,8 +346,29 @@ class PokAddictsScanner {
       this.pendingSuggestions = [];
       this.view = 'capture';
     } finally {
-      if (hud) hud.innerText = 'Align card in the frame, then tap Capture';
       this.renderDynamicSectionOnly();
+    }
+  }
+
+  // On-device OCR (Tesseract.js) used only for two narrow, reliable
+  // signals - not full name-reading (which foil/glare/stylized fonts make
+  // unreliable): whether the visible text is Japanese, and the printed
+  // card number (plain digits, easy to read regardless of language). If a
+  // known Japanese species name is found in the OCR text, its English
+  // name is included too.
+  async quickOcrHint(canvas) {
+    if (typeof Tesseract === 'undefined') return null;
+    try {
+      const { data } = await Tesseract.recognize(canvas, 'eng+jpn');
+      const text = data.text || '';
+      const hasJapanese = /[぀-ヿ一-鿿]/.test(text);
+      const numberMatch = text.match(/(\d{1,4})\s*\/\s*(\d{1,4})/);
+      const number = numberMatch ? numberMatch[1] : '';
+      const translatedName = hasJapanese ? this.translateJapaneseName(text) : null;
+      return { hasJapanese, number, translatedName };
+    } catch (err) {
+      console.warn('OCR hint failed:', err);
+      return null;
     }
   }
 
@@ -340,7 +378,7 @@ class PokAddictsScanner {
   // several real candidates instead of one possibly-wrong answer. The raw
   // CardSight guess is kept as a fallback option too, in case the actual
   // card isn't in the PokeWallet catalog yet.
-  async buildCandidateList(primary) {
+  async buildCandidateList(primary, ocrHint) {
     const query = [primary.name, primary.number].filter(Boolean).join(' ').trim();
     let matches = window.cardCatalog ? window.cardCatalog.searchLocal(query, 8) : [];
 
@@ -365,7 +403,39 @@ class PokAddictsScanner {
       candidates.push({ name: primary.name, set: primary.set, number: primary.number, catalogCardId: '', source: 'cardsight' });
     }
 
+    // OCR detected Japanese text matching a known species, different from
+    // CardSight's own guess - search for that too and surface it first,
+    // giving the likely-correct card a real shot even when CardSight
+    // misreads a Japanese print.
+    if (ocrHint?.translatedName && ocrHint.translatedName.toLowerCase() !== (primary.name || '').toLowerCase()) {
+      const jpQuery = [ocrHint.translatedName, ocrHint.number || primary.number].filter(Boolean).join(' ').trim();
+      let jpMatches = window.cardCatalog ? window.cardCatalog.searchLocal(jpQuery, 3) : [];
+
+      if (jpMatches.length === 0 && window.pokeWalletClient?.configured) {
+        try {
+          const res = await window.pokeWalletClient.searchCards(jpQuery, { limit: 3 });
+          const liveCards = (res.results || []).map(r => window.cardSearchUI.normalizeLiveSearchResult(r));
+          await window.cardCatalog.cacheLiveResults(liveCards);
+          jpMatches = window.cardCatalog.rankCards(liveCards, jpQuery);
+        } catch (err) {
+          console.warn('OCR-assisted Japanese search failed:', err);
+        }
+      }
+
+      jpMatches.slice(0, 2).forEach(m => {
+        if (!candidates.some(c => c.catalogCardId === m.id)) {
+          candidates.unshift({ name: m.name, set: m.set, number: m.number, catalogCardId: m.id, source: 'ocr-japanese' });
+        }
+      });
+    }
+
     return candidates;
+  }
+
+  sourceLabel(source) {
+    if (source === 'cardsight') return ' • AI guess, unverified';
+    if (source === 'ocr-japanese') return ' • matched from Japanese text';
+    return '';
   }
 
   renderSuggestionsHTML() {
@@ -381,7 +451,7 @@ class PokAddictsScanner {
           <div id="scanner-result-thumb-0" class="scanner-result-thumb">🎴</div>
           <div class="scanner-result-info" style="cursor: pointer;" onclick="window.scanner.confirmSuggestion(0)">
             <div class="scanner-result-name">${top.name}${top.number ? ' #' + top.number : ''}</div>
-            <div class="scanner-result-meta">${top.set || ''}${top.source === 'cardsight' ? ' • AI guess, unverified' : ''}</div>
+            <div class="scanner-result-meta">${top.set || ''}${this.sourceLabel(top.source)}</div>
           </div>
           ${restCount > 0 ? `<span class="scanner-result-more" onclick="window.scanner.expandSuggestions()">☰ ${restCount} More</span>` : ''}
         </div>
@@ -398,7 +468,7 @@ class PokAddictsScanner {
           <div class="trade-item-pill" style="padding: 10px; cursor: pointer;" onclick="window.scanner.confirmSuggestion(${idx})">
             <span>
               <strong>${s.name}</strong>${s.number ? ` #${s.number}` : ''}
-              <div style="font-size: 0.7rem; color: var(--text-secondary);">${s.set || ''}${s.source === 'cardsight' ? ' • AI guess, unverified' : ''}</div>
+              <div style="font-size: 0.7rem; color: var(--text-secondary);">${s.set || ''}${this.sourceLabel(s.source)}</div>
             </span>
             <span style="color: var(--accent-green); font-weight: 700;">✓ Use</span>
           </div>
@@ -476,7 +546,6 @@ class PokAddictsScanner {
 
     let catalogCardId = suggestion.catalogCardId || '';
     let setName = suggestion.set || '';
-    let marketValue = 0;
 
     if (!catalogCardId) {
       window.app.showToast(`Looking up price for ${finalName}...`);
@@ -487,32 +556,80 @@ class PokAddictsScanner {
       }
     }
 
-    if (catalogCardId) {
-      try {
-        const detail = await window.pokeWalletClient.getCard(catalogCardId);
-        const { price } = window.pokeWalletClient.extractMarketPriceSGD(detail);
-        marketValue = price || 0;
-      } catch (err) {
-        console.warn('PokeWallet price fetch failed:', err);
-      }
+    if (!catalogCardId) {
+      this.addRawToScanList(finalName, setName, '', 0);
+      window.app.showToast(`Added ${finalName} to scan list (${this.scanList.length}) - no PokeWallet price found, edit manually`);
+      this.renderDynamicSectionOnly();
+      return;
     }
 
+    let variants = [];
+    try {
+      const detail = await window.pokeWalletClient.getCard(catalogCardId);
+      variants = window.pokeWalletClient.extractAllVariantsSGD(detail);
+    } catch (err) {
+      console.warn('PokeWallet price fetch failed:', err);
+    }
+
+    if (variants.length <= 1) {
+      const marketValue = variants[0]?.price || 0;
+      this.addRawToScanList(finalName, setName, catalogCardId, marketValue);
+      window.app.showToast(`Added ${finalName} ($${marketValue.toFixed(2)}) to scan list (${this.scanList.length})`);
+      this.renderDynamicSectionOnly();
+      return;
+    }
+
+    // Same card/set/number can print in several finishes (Normal, Holo,
+    // Reverse Holo, 1st Edition, etc.) at very different market values -
+    // let the user pick which one their physical copy actually is instead
+    // of guessing.
+    this.pendingVariantChoice = { name: finalName, set: setName, catalogCardId, variants };
+    this.view = 'variantPick';
+    this.renderDynamicSectionOnly();
+  }
+
+  addRawToScanList(name, set, catalogCardId, marketValue, variantLabel) {
     this.scanList.push({
       tempId: 'scan-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
-      name: finalName,
-      set: setName,
+      name,
+      set,
       type: 'raw',
       gradingCompany: 'Raw',
       grade: 'NM',
       condition: 'Near Mint',
       catalogCardId,
-      marketValue
+      marketValue,
+      variantLabel: variantLabel || ''
     });
+  }
 
-    window.app.showToast(catalogCardId
-      ? `Added ${finalName} ($${marketValue.toFixed(2)}) to scan list (${this.scanList.length})`
-      : `Added ${finalName} to scan list (${this.scanList.length}) - no PokeWallet price found, edit manually`);
+  renderVariantPickHTML() {
+    const v = this.pendingVariantChoice;
+    if (!v) return '';
 
+    return `
+      <div class="card-panel glow-gold">
+        <div style="font-weight: 700; font-size: 0.85rem; margin-bottom: 4px;">Which version is this?</div>
+        <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 10px;">${v.name}${v.set ? ' • ' + v.set : ''}</div>
+        ${v.variants.map((variant, idx) => `
+          <div class="trade-item-pill" style="padding: 10px; cursor: pointer;" onclick="window.scanner.confirmVariant(${idx})">
+            <span>${variant.label}</span>
+            <span style="color: var(--accent-green); font-weight: 700; font-family: 'JetBrains Mono', monospace;">$${variant.price.toFixed(2)}</span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  confirmVariant(idx) {
+    const v = this.pendingVariantChoice;
+    if (!v) return;
+    const variant = v.variants[idx];
+    this.pendingVariantChoice = null;
+    this.view = 'capture';
+
+    this.addRawToScanList(v.name, v.set, v.catalogCardId, variant.price, variant.label);
+    window.app.showToast(`Added ${v.name} (${variant.label}) - $${variant.price.toFixed(2)} to scan list (${this.scanList.length})`);
     this.renderDynamicSectionOnly();
   }
 
@@ -664,7 +781,7 @@ class PokAddictsScanner {
           <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
             <div>
               <div style="font-weight: 700; font-size: 0.9rem; color: var(--text-primary);">${entry.name}</div>
-              <div style="font-size: 0.72rem; color: var(--text-secondary);">${entry.set || ''}${entry.type === 'slab' ? ` • ${entry.gradingCompany} ${entry.grade}` : ''}</div>
+              <div style="font-size: 0.72rem; color: var(--text-secondary);">${entry.set || ''}${entry.type === 'slab' ? ` • ${entry.gradingCompany} ${entry.grade}` : ''}${entry.variantLabel ? ` • ${entry.variantLabel}` : ''}</div>
             </div>
             <span style="color: var(--accent-red); cursor: pointer;" onclick="window.scanner.removeFromScanList('${entry.tempId}')">✕</span>
           </div>

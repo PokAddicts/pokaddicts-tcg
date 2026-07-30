@@ -99,6 +99,46 @@ class PokeWalletClient {
     const sgdPrice = window.fxRates.convertToSGD(price, currency);
     return { price: sgdPrice, source: `${source} (${currency}→SGD)` };
   }
+
+  // Unlike extractMarketPrice() (which picks one "best" price), this
+  // returns every printing variant with its own price - e.g. Normal,
+  // Holofoil, Reverse Holofoil, 1st Edition - since the same card/set/
+  // number can have very different market values depending on which
+  // finish the physical copy actually is.
+  extractAllVariants(cardDetail) {
+    const variants = [];
+
+    const tcgPrices = cardDetail?.tcgplayer?.prices || [];
+    tcgPrices.forEach(p => {
+      if (p.market_price) {
+        variants.push({ label: p.sub_type_name || 'Normal', price: p.market_price, currency: 'USD', source: 'TCGPlayer' });
+      }
+    });
+
+    // Only fall back to CardMarket variants if TCGPlayer had none at all
+    // (the norm for Japanese-only cards) - don't mix currencies/sources
+    // within the same variant list.
+    if (variants.length === 0) {
+      const cmPrices = cardDetail?.cardmarket?.prices || [];
+      cmPrices.forEach(p => {
+        if (p.avg) {
+          variants.push({ label: p.variant_type || 'Normal', price: p.avg, currency: 'EUR', source: 'CardMarket' });
+        }
+      });
+    }
+
+    return variants;
+  }
+
+  // Same as extractAllVariants, but each variant's price is converted to
+  // SGD.
+  extractAllVariantsSGD(cardDetail) {
+    return this.extractAllVariants(cardDetail).map(v => ({
+      label: v.label,
+      price: window.fxRates.convertToSGD(v.price, v.currency),
+      source: `${v.source} (${v.currency}→SGD)`
+    }));
+  }
 }
 
 window.pokeWalletClient = new PokeWalletClient();

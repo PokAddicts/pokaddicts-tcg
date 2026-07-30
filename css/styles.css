@@ -839,21 +839,6 @@ select.form-control {
   z-index: 5;
 }
 
-.scanner-hud-text {
-  position: absolute;
-  top: calc(44% + 40%);
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.6);
-  padding: 4px 12px;
-  border-radius: 12px;
-  font-size: 0.8rem;
-  color: var(--accent-gold);
-  font-weight: 600;
-  z-index: 3;
-  white-space: nowrap;
-}
-
 .scanner-bottom-sheet {
   position: absolute;
   left: 0;
@@ -970,6 +955,14 @@ select.form-control {
   top: 50%;
   transform: translateY(-50%);
   width: auto;
+}
+
+.scanner-strip-counter {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #fff;
+  padding: 0 16px;
+  margin-bottom: 4px;
 }
 
 /* Fixed-height horizontal strip of scanned cards - rolls sideways so it

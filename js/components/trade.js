@@ -77,7 +77,7 @@ class TradeComponent {
           `).join('')}
 
           <button class="btn btn-secondary btn-sm" style="margin-top: 8px; width: 100%;" onclick="window.app.switchTab('inventory')">
-            + Pick Item from Inventory
+            + Pick from Inventory
           </button>
         </div>
 
@@ -132,7 +132,7 @@ class TradeComponent {
         </div>
 
         <button class="btn btn-green" onclick="window.tradeComp.executeTradeTransaction()">
-          🤝 Execute Trade & Allocate Cost Basis
+          🤝 Execute Trade
         </button>
 
         <div class="kpi-grid" style="margin-top: 12px;">

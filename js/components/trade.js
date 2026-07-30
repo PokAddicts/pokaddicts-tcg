@@ -58,9 +58,10 @@ class TradeComponent {
         <!-- Dealer Giving Column -->
         <div class="trade-column">
           <div class="trade-col-title">📤 YOU GIVE (OUT)</div>
-          <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;">
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 2px;">
             Cost Basis: <strong style="color: var(--accent-gold);">$${givenTotalCost.toFixed(2)}</strong>
-            &nbsp;•&nbsp;
+          </div>
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;">
             Mkt Est: <strong style="color: var(--accent-cyan);">$${givenTotalMkt.toFixed(2)}</strong>
           </div>
 

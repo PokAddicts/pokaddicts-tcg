@@ -274,7 +274,7 @@ class CardSearchUI {
       .catch((err) => console.warn('Card image fetch failed:', err));
 
     const cardLang = card.language || 'en';
-    const pricePromise = this.fetchAllPricesForCard(cardId, cardLang, card.name, card.number)
+    const pricePromise = this.fetchAllPricesForCard(cardId, cardLang, displayName, card.number)
       .then((allPrices) => {
         // TCGPlayer (US) and CardMarket (EU) are genuinely different
         // marketplaces and can diverge quite a bit - show both whenever

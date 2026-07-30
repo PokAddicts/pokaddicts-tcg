@@ -244,6 +244,10 @@ class CardCatalog {
       if (numberPart) {
         if (cardNum !== null && cardNum === queryNum) score -= 100;
         else if (cardNumber.includes(numberPart)) score -= 10;
+        // A number was typed but this card's number doesn't contain it at
+        // all - drop it entirely rather than showing it ranked below the
+        // actual matches, even when the name also matches.
+        else continue;
       }
 
       // Known-broken/duplicate entries (no image AND no price ever found)
@@ -252,10 +256,19 @@ class CardCatalog {
       // signal from a previous lookup.
       if (c.lowQuality) score += 1000;
 
-      scored.push({ card: c, score });
+      scored.push({ card: c, score, cardNum });
     }
 
-    scored.sort((a, b) => a.score - b.score);
+    // Within the same score tier, break ties by ascending card number - so
+    // when several cards contain the typed digits (e.g. query "5" matching
+    // 005, 015, 105, 025), the lowest number surfaces first instead of
+    // whatever order the catalog happened to store them in.
+    scored.sort((a, b) => {
+      if (a.score !== b.score) return a.score - b.score;
+      if (a.cardNum === null) return 1;
+      if (b.cardNum === null) return -1;
+      return a.cardNum - b.cardNum;
+    });
     return scored.map(s => s.card);
   }
 

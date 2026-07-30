@@ -77,7 +77,13 @@ class CardSearchUI {
     const dropdown = document.getElementById(this.ids.dropdownId);
     if (!dropdown) return;
 
-    if (!query || query.trim().length < 2) {
+    const trimmedQuery = (query || '').trim();
+    // A single digit is still a meaningful start of a card-number search
+    // (e.g. "5"), so only apply the 2-char minimum to letters - requiring
+    // it for numbers meant nothing appeared until a second digit was
+    // typed, which read as the search being unresponsive.
+    const isNumberQuery = /^\d+$/.test(trimmedQuery);
+    if (!trimmedQuery || (trimmedQuery.length < 2 && !isNumberQuery)) {
       dropdown.style.display = 'none';
       dropdown.innerHTML = '';
       return;

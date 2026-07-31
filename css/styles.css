@@ -764,59 +764,47 @@ select.form-control {
   cursor: pointer;
 }
 
-/* Price picker (Intake's confirm-preview), four fixed rows:
-   .price-finish-row - chips for any real named finish (Normal / Reverse
-   Holofoil / etc), only rendered when there's more than one (genuine
-   ambiguity to resolve). .price-tier-list - SnkrDunk's own conditions
-   (All / A / B / C / etc), each its own row with the label on the left
-   and that tier's own price on the right, ending in a "SNKRDUNK" section
-   label. .price-tcgplayer-row and .price-cardmarket-row (both share
-   .price-source-info) are plain informational text underneath (not
-   clickable) showing that marketplace's price for whichever finish is
-   currently selected - SnkrDunk conditions don't have a matching
-   per-finish price, so picking one doesn't change these two rows, only
-   which row is selected and the stored value. */
-.price-finish-row {
+/* Price picker (Intake's confirm-preview): .price-finish-row - chips for
+   any real named finish (Normal / Reverse Holofoil / etc), only rendered
+   when there's more than one (genuine ambiguity to resolve).
+   .price-tier-chip-row - SnkrDunk's own conditions (All / A / B / C /
+   etc) as compact side-by-side chips, no price shown on the chip itself
+   (keeps the row short) - picking one updates the SNKRDUNK line below.
+   .price-snkrdunk-row / .price-tcgplayer-row / .price-cardmarket-row
+   (share .price-source-info) are each their own clickable price line -
+   exactly one of these, or one finish/tier chip, is ever the active
+   selection (.selected) that becomes the stored market value. */
+.price-finish-row, .price-tier-chip-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
 }
 
-.price-tier-list {
-  display: flex;
-  flex-direction: column;
-  margin-top: 4px;
-}
-
-.price-tier-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 3px 8px;
-  border-radius: var(--border-radius-sm);
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.price-tier-row.selected {
-  background: var(--accent-gold-glow);
-  color: var(--accent-gold);
+.price-tier-chip-row {
+  margin-top: 2px;
 }
 
 .price-source-info {
   margin-top: 4px;
   color: var(--text-secondary);
   font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--border-radius-sm);
+  width: fit-content;
 }
 
-.price-source-tag {
+.price-source-info.selected {
+  background: var(--accent-gold-glow);
+  color: var(--accent-gold);
+}
+
+.price-source-info.disabled {
   color: var(--text-muted);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  margin-top: 2px;
+  font-weight: 400;
+  cursor: default;
+  pointer-events: none;
 }
 
 .price-variant-chip {

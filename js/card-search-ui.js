@@ -134,96 +134,127 @@ class CardSearchUI {
   // finish), so selecting one only changes this.resolvedCard.marketValue
   // and which chip is marked selected - rows 2/3 keep showing whichever
   // finish is currently active.
+  // Renders the price picker as: an optional row of real finish variants
+  // (Normal / Reverse Holofoil / etc, only when there's more than one),
+  // a compact side-by-side row of SnkrDunk tier chips (All / A / B / C /
+  // etc - no price on the chip itself, keeps the row short), then three
+  // clickable price lines - "SNKRDUNK S$X" (reflects whichever tier chip
+  // was last picked), "TCG Player S$X", "CardMarket S$X". Exactly one of
+  // these (a variant chip, a tier chip, or one of the two marketplace
+  // lines) is ever the active selection at a time, and that's what
+  // becomes this.resolvedCard.marketValue - clicking any of them clears
+  // every other selected state first.
   renderPriceGroups(priceLine, allPrices) {
     const snkrDunkEntries = allPrices.filter(p => p.source === 'SnkrDunk');
     const marketplaceEntries = allPrices.filter(p => p.source !== 'SnkrDunk');
     const finishGroups = marketplaceEntries.length > 0 ? this.groupVariantsByFinish(marketplaceEntries) : [];
 
-    // Variant chips (Normal / Reverse Holofoil / etc, only when there's
-    // more than one real finish) stay a small horizontal chip row - their
-    // price shows reactively in rows 3/4 once selected. SnkrDunk's tiers
-    // render as their own stacked list instead (label left, price right
-    // on each row, e.g. "A" ... "S$223") since there's no reference row
-    // for SnkrDunk conditions to update - without showing the price
-    // directly on each tier, picking one changed the stored value with no
-    // visible feedback, and comparing prices across tiers meant clicking
-    // each one individually.
     const variantChips = finishGroups.length > 1 ? finishGroups.map(g => ({ label: g.label, entries: g.entries })) : [];
-    const snkrDunkTiers = snkrDunkEntries.map(e => ({ label: e.label, entries: [{ price: e.price, source: e.source }] }));
-    const chips = [...variantChips, ...snkrDunkTiers];
+    const snkrDunkTiers = snkrDunkEntries.map(e => ({ label: e.label, price: e.price }));
     const defaultEntries = (finishGroups[0] || { entries: [] }).entries;
-
     const findEntry = (entries, prefix) => entries.find(e => (e.source || '').startsWith(prefix));
+
     priceLine.innerHTML = `
       <div class="price-finish-row"></div>
-      <div class="price-tier-list"></div>
-      <div class="price-source-info price-tcgplayer-row"></div>
-      <div class="price-source-info price-cardmarket-row"></div>
+      <div class="price-tier-chip-row"></div>
+      <div class="price-source-info price-selectable price-snkrdunk-row"></div>
+      <div class="price-source-info price-selectable price-tcgplayer-row"></div>
+      <div class="price-source-info price-selectable price-cardmarket-row"></div>
     `;
+    const finishRow = priceLine.querySelector('.price-finish-row');
+    const tierChipRow = priceLine.querySelector('.price-tier-chip-row');
+    const snkrDunkRow = priceLine.querySelector('.price-snkrdunk-row');
     const tcgRow = priceLine.querySelector('.price-tcgplayer-row');
     const cmRow = priceLine.querySelector('.price-cardmarket-row');
-    const renderReferenceRows = (entries) => {
-      const tcg = findEntry(entries, 'TCGPlayer');
-      const cm = findEntry(entries, 'CardMarket');
-      tcgRow.textContent = tcg ? `TCG Player: S$${tcg.price.toFixed(2)}` : 'TCG Player: -';
-      cmRow.textContent = cm ? `CardMarket: S$${cm.price.toFixed(2)}` : 'CardMarket: -';
+
+    let referenceEntries = defaultEntries;
+    const selectables = [];
+    const clearSelection = () => selectables.forEach(el => el.classList.remove('selected'));
+    const select = (el, price) => {
+      clearSelection();
+      el.classList.add('selected');
+      this.resolvedCard.marketValue = price;
     };
 
-    if (chips.length === 0) {
-      priceLine.querySelector('.price-finish-row').remove();
-      priceLine.querySelector('.price-tier-list').remove();
-      this.resolvedCard.marketValue = defaultEntries[0]?.price || 0;
-      renderReferenceRows(defaultEntries);
-      return;
-    }
+    const refreshReferenceRows = () => {
+      const tcg = findEntry(referenceEntries, 'TCGPlayer');
+      const cm = findEntry(referenceEntries, 'CardMarket');
+      tcgRow.textContent = tcg ? `TCG Player S$${tcg.price.toFixed(2)}` : 'TCG Player -';
+      cmRow.textContent = cm ? `CardMarket S$${cm.price.toFixed(2)}` : 'CardMarket -';
+      tcgRow.classList.toggle('disabled', !tcg);
+      cmRow.classList.toggle('disabled', !cm);
+    };
 
-    const finishRow = priceLine.querySelector('.price-finish-row');
     if (variantChips.length === 0) {
       finishRow.remove();
     } else {
       finishRow.innerHTML = variantChips.map((c, i) => `
-        <button type="button" class="price-variant-chip${i === 0 ? ' selected' : ''}" data-index="${i}">${c.label}</button>
+        <button type="button" class="price-variant-chip" data-index="${i}">${c.label}</button>
       `).join('');
       finishRow.querySelectorAll('.price-variant-chip').forEach((chipEl, i) => {
+        selectables.push(chipEl);
         chipEl.addEventListener('click', () => {
-          finishRow.querySelectorAll('.price-variant-chip').forEach((c) => c.classList.remove('selected'));
-          tierList.querySelectorAll('.price-tier-row').forEach((c) => c.classList.remove('selected'));
-          chipEl.classList.add('selected');
-          this.resolvedCard.marketValue = variantChips[i].entries[0].price;
-          renderReferenceRows(variantChips[i].entries);
+          select(chipEl, variantChips[i].entries[0].price);
+          referenceEntries = variantChips[i].entries;
+          refreshReferenceRows();
         });
       });
     }
 
-    const tierList = priceLine.querySelector('.price-tier-list');
+    // Selecting a tier highlights BOTH that chip and the SNKRDUNK line
+    // together (a linked pair) - clicking the SNKRDUNK line itself (not a
+    // specific chip) just re-activates whichever tier was last picked, so
+    // switching to TCG Player/CardMarket and back doesn't lose it.
+    let currentTierIndex = 0;
+    const selectTier = (i) => {
+      currentTierIndex = i;
+      snkrDunkRow.textContent = `SNKRDUNK S$${snkrDunkTiers[i].price.toFixed(2)}`;
+      clearSelection();
+      tierChipRow.children[i].classList.add('selected');
+      snkrDunkRow.classList.add('selected');
+      this.resolvedCard.marketValue = snkrDunkTiers[i].price;
+    };
+
     if (snkrDunkTiers.length === 0) {
-      tierList.remove();
+      tierChipRow.remove();
+      snkrDunkRow.remove();
     } else {
-      tierList.innerHTML = snkrDunkTiers.map((c, i) => `
-        <div class="price-tier-row${variantChips.length === 0 && i === 0 ? ' selected' : ''}" data-index="${i}">
-          <span class="price-tier-label">${c.label}</span>
-          <span class="price-tier-value">S$${c.entries[0].price.toFixed(2)}</span>
-        </div>
-      `).join('') + '<div class="price-source-tag">SNKRDUNK</div>';
-      tierList.querySelectorAll('.price-tier-row').forEach((tierEl, i) => {
-        tierEl.addEventListener('click', () => {
-          finishRow?.querySelectorAll('.price-variant-chip').forEach((c) => c.classList.remove('selected'));
-          tierList.querySelectorAll('.price-tier-row').forEach((c) => c.classList.remove('selected'));
-          tierEl.classList.add('selected');
-          this.resolvedCard.marketValue = snkrDunkTiers[i].entries[0].price;
-        });
+      tierChipRow.innerHTML = snkrDunkTiers.map((t, i) => `
+        <button type="button" class="price-variant-chip" data-index="${i}">${t.label}</button>
+      `).join('');
+      tierChipRow.querySelectorAll('.price-variant-chip').forEach((chipEl, i) => {
+        selectables.push(chipEl);
+        chipEl.addEventListener('click', () => selectTier(i));
       });
+      selectables.push(snkrDunkRow);
+      snkrDunkRow.addEventListener('click', () => selectTier(currentTierIndex));
     }
 
-    // Default selection: a variant chip (if any exist) wins over a
-    // SnkrDunk tier, matching which one actually starts out marked
-    // "selected" above.
-    if (variantChips.length > 0) {
-      this.resolvedCard.marketValue = variantChips[0].entries[0].price;
-      renderReferenceRows(variantChips[0].entries);
+    selectables.push(tcgRow, cmRow);
+    tcgRow.addEventListener('click', () => {
+      const tcg = findEntry(referenceEntries, 'TCGPlayer');
+      if (tcg) select(tcgRow, tcg.price);
+    });
+    cmRow.addEventListener('click', () => {
+      const cm = findEntry(referenceEntries, 'CardMarket');
+      if (cm) select(cmRow, cm.price);
+    });
+
+    refreshReferenceRows();
+
+    // Default selection: a SnkrDunk tier ("All" - the most accurate
+    // current-market figure, the lowest active listing rather than an
+    // average) wins if present, otherwise the first variant finish,
+    // otherwise whichever marketplace price is actually available.
+    if (snkrDunkTiers.length > 0) {
+      selectTier(0);
+    } else if (variantChips.length > 0) {
+      finishRow.querySelector('.price-variant-chip').click();
     } else {
-      this.resolvedCard.marketValue = snkrDunkTiers[0].entries[0].price;
-      renderReferenceRows(defaultEntries);
+      const tcg = findEntry(defaultEntries, 'TCGPlayer');
+      const cm = findEntry(defaultEntries, 'CardMarket');
+      if (tcg) select(tcgRow, tcg.price);
+      else if (cm) select(cmRow, cm.price);
     }
   }
 

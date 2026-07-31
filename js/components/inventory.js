@@ -177,18 +177,20 @@ class InventoryComponent {
 
   renderBinderGroupCard(b) {
     return `
-      <div class="item-card" style="cursor: pointer;" onclick="window.inventoryComp.viewBinder('${b.binderName.replace(/'/g, "\\'")}')">
-        <div class="item-icon-box">🗂️</div>
-        <div class="item-details">
-          <div class="item-name">${b.binderName}</div>
-          <div class="item-meta">
-            <span class="badge badge-raw">Binder</span>
-            <span>${b.itemCount} item${b.itemCount === 1 ? '' : 's'} • ${b.totalQuantity} cards</span>
+      <div class="item-card item-card-compact" onclick="window.inventoryComp.viewBinder('${b.binderName.replace(/'/g, "\\'")}')">
+        <div class="item-card-top">
+          <div class="item-icon-box">🗂️</div>
+          <div class="item-details">
+            <div class="item-name">${b.binderName}</div>
+            <div class="item-meta">
+              <span class="badge badge-raw">Binder</span>
+              <span>${b.itemCount} item${b.itemCount === 1 ? '' : 's'} • ${b.totalQuantity} cards</span>
+            </div>
           </div>
-        </div>
-        <div class="item-pricing">
-          <div class="item-market">$${b.totalMarketValue.toFixed(2)}</div>
-          <div class="item-margin" style="color: var(--text-secondary);">Cost: $${b.totalCostValue.toFixed(2)}</div>
+          <div class="item-pricing">
+            <div class="item-market">$${b.totalMarketValue.toFixed(2)}</div>
+            <div class="item-cost">Cost: $${b.totalCostValue.toFixed(2)}</div>
+          </div>
         </div>
       </div>
     `;
@@ -334,6 +336,7 @@ class InventoryComponent {
 
           <div class="item-pricing">
             <div class="item-market">$${item.marketValue.toFixed(2)}${hasMultipleQty ? '/ea' : ''}</div>
+            <div class="item-cost">Cost: $${item.costBasis.toFixed(2)}${hasMultipleQty ? '/ea' : ''}</div>
             <div class="item-margin ${margin >= 0 ? 'margin-positive' : 'margin-negative'}">
               ${margin >= 0 ? '+' : ''}$${margin.toFixed(2)} (${marginPct.toFixed(0)}%)
             </div>
@@ -491,50 +494,76 @@ class InventoryComponent {
     `;
   }
 
-  // Just the market values that actually matter for a resale decision -
-  // English cards: TCG Player, CardMarket, PriceCharting. Japanese cards:
-  // SnkrDunk (the most accurate current-market figure - see
-  // js/snkrdunk-client.js), TCG Player, CardMarket, PriceCharting.
+  // Just the market values that actually matter for a resale decision,
+  // styled to match Intake's own price picker (see card-search-ui.js's
+  // renderPriceGroups - same .price-source-info/.price-variant-chip/
+  // .price-tier-chip-row classes) rather than the plain .item-detail-row
+  // list used elsewhere in this modal. English cards: TCG Player,
+  // CardMarket, PriceCharting. Japanese cards: ALL of SnkrDunk's cached
+  // condition tiers as a compact chip row (filtered to raw or graded
+  // depending on whether THIS item is itself a raw card or a graded slab
+  // - a real gap this fixes, the previous version only ever showed the
+  // single cheapest "All" tier), TCG Player, CardMarket, PriceCharting.
   // PriceCharting isn't wired up yet (needs a paid API token), shown as a
   // placeholder so the layout's already there once it is. Anything not
   // matched to the catalog (manually-typed name, sealed product, binder
   // tier) has no per-source breakdown to show - just the single market
   // value recorded at intake.
   renderMarketPriceRows(item) {
-    const row = (label, value) => `<div class="item-detail-row"><span>${label}</span><span${value ? '' : ' class="item-detail-pending"'}>${value || 'Not cached yet'}</span></div>`;
+    const sourceLine = (label, value, placeholder = 'Not cached yet') =>
+      `<div class="price-source-info${value ? '' : ' disabled'}">${label} ${value || placeholder}</div>`;
     const card = item.catalogCardId && window.cardCatalog ? window.cardCatalog.getCardById(item.catalogCardId) : null;
 
     if (!card) {
-      return row('Market Value', `$${item.marketValue.toFixed(2)}${item.quantity > 1 ? '/ea' : ''}`);
+      return `<div class="item-detail-row"><span>Market Value</span><span>$${item.marketValue.toFixed(2)}${item.quantity > 1 ? '/ea' : ''}</span></div>`;
     }
 
-    const rows = [];
-
-    if (card.language === 'ja') {
-      if (card.snkrdunkConditions?.length > 0) {
-        const all = Math.min(...card.snkrdunkConditions.map(c => c.price));
-        rows.push(row('SnkrDunk', `S$${all.toFixed(2)}`));
-      } else {
-        rows.push(row('SnkrDunk'));
-      }
-      const tcg = card.pokewalletVariants?.find(v => (v.source || '').startsWith('TCGPlayer'));
-      const cm = card.pokewalletVariants?.find(v => (v.source || '').startsWith('CardMarket'));
-      rows.push(row('TCG Player', tcg ? `S$${tcg.price.toFixed(2)}` : null));
-      rows.push(row('CardMarket', cm ? `S$${cm.price.toFixed(2)}` : null));
-    } else {
+    if (card.language !== 'ja') {
       // The daily English cache only stores ONE merged "best" price today
       // (TCGPlayer preferred, CardMarket only as a fallback when there's
       // no TCGPlayer listing at all - see refresh-catalog-prices), not
       // both separately yet, so only whichever one was actually cached
       // shows a real number.
       const isTcg = (card.priceSource || '').startsWith('TCGPlayer');
-      rows.push(row('TCG Player', card.marketValueSgd > 0 && isTcg ? `S$${card.marketValueSgd.toFixed(2)}` : null));
-      rows.push(row('CardMarket', card.marketValueSgd > 0 && !isTcg ? `S$${card.marketValueSgd.toFixed(2)}` : null));
+      const tcgVal = card.marketValueSgd > 0 && isTcg ? `S$${card.marketValueSgd.toFixed(2)}` : null;
+      const cmVal = card.marketValueSgd > 0 && !isTcg ? `S$${card.marketValueSgd.toFixed(2)}` : null;
+      return sourceLine('TCG Player', tcgVal) + sourceLine('CardMarket', cmVal) + sourceLine('PriceCharting', null, 'Coming soon');
     }
 
-    rows.push('<div class="item-detail-row"><span>PriceCharting</span><span class="item-detail-pending">Coming soon</span></div>');
+    const wantGraded = item.type === 'slab';
+    const tiers = (card.snkrdunkConditions || []).filter(c => c.graded === wantGraded);
+    const tcg = card.pokewalletVariants?.find(v => (v.source || '').startsWith('TCGPlayer'));
+    const cm = card.pokewalletVariants?.find(v => (v.source || '').startsWith('CardMarket'));
+    const tail = sourceLine('TCG Player', tcg ? `S$${tcg.price.toFixed(2)}` : null)
+      + sourceLine('CardMarket', cm ? `S$${cm.price.toFixed(2)}` : null)
+      + sourceLine('PriceCharting', null, 'Coming soon');
 
-    return rows.join('');
+    if (tiers.length === 0) {
+      return sourceLine('SNKRDUNK', null) + tail;
+    }
+
+    const rowId = `item-detail-snkrdunk-${item.id}`;
+    // Deferred so the chip row exists in the DOM first - this whole
+    // string is still being assembled into a template literal the caller
+    // hasn't written to innerHTML yet.
+    setTimeout(() => {
+      const wrap = document.getElementById(rowId);
+      if (!wrap) return;
+      wrap.querySelectorAll('.price-variant-chip').forEach((chip, i) => {
+        chip.addEventListener('click', () => {
+          wrap.querySelectorAll('.price-variant-chip').forEach(c => c.classList.remove('selected'));
+          chip.classList.add('selected');
+          wrap.querySelector('.price-snkrdunk-value').textContent = `SNKRDUNK S$${tiers[i].price.toFixed(2)}`;
+        });
+      });
+    }, 0);
+
+    return `
+      <div id="${rowId}">
+        <div class="price-tier-chip-row">${tiers.map((t, i) => `<button type="button" class="price-variant-chip${i === 0 ? ' selected' : ''}" data-index="${i}">${t.label}</button>`).join('')}</div>
+        <div class="price-source-info price-snkrdunk-value">SNKRDUNK S$${tiers[0].price.toFixed(2)}</div>
+      </div>
+    ` + tail;
   }
 
   openRestockModal(itemId) {

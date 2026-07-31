@@ -1,9 +1,9 @@
 /* ==========================================================================
    PokAddicts - Currency Conversion
-   PokeWallet prices come in USD (TCGPlayer) or EUR (CardMarket) - this
-   converts them to SGD (the business's operating currency) using
-   Frankfurter, a free, no-key exchange rate API (ECB-sourced), cached and
-   refreshed once a day.
+   PokeWallet/TCGdex prices come in USD (TCGPlayer) or EUR (CardMarket),
+   and Yuyu-tei's in JPY - this converts them all to SGD (the business's
+   operating currency) using Frankfurter, a free, no-key exchange rate API
+   (ECB-sourced), cached and refreshed once a day.
    ========================================================================== */
 
 const FX_BASE_URL = 'https://api.frankfurter.dev/v1';
@@ -12,7 +12,7 @@ const FX_TARGET_CURRENCY = 'SGD';
 
 // Rough fallback rates, used only until the first live fetch completes (or
 // if that fetch ever fails) so conversions still work offline/on error.
-const FX_FALLBACK_RATES = { USD: 1.29, EUR: 1.41 };
+const FX_FALLBACK_RATES = { USD: 1.29, EUR: 1.41, JPY: 0.0088 };
 
 class FxRates {
   constructor() {
@@ -42,13 +42,15 @@ class FxRates {
     if (this.lastFetchedDate === today) return;
 
     try {
-      const [usdRes, eurRes] = await Promise.all([
+      const [usdRes, eurRes, jpyRes] = await Promise.all([
         fetch(`${FX_BASE_URL}/latest?from=USD&to=${FX_TARGET_CURRENCY}`).then(r => r.json()),
-        fetch(`${FX_BASE_URL}/latest?from=EUR&to=${FX_TARGET_CURRENCY}`).then(r => r.json())
+        fetch(`${FX_BASE_URL}/latest?from=EUR&to=${FX_TARGET_CURRENCY}`).then(r => r.json()),
+        fetch(`${FX_BASE_URL}/latest?from=JPY&to=${FX_TARGET_CURRENCY}`).then(r => r.json())
       ]);
 
       if (usdRes.rates?.[FX_TARGET_CURRENCY]) this.rates.USD = usdRes.rates[FX_TARGET_CURRENCY];
       if (eurRes.rates?.[FX_TARGET_CURRENCY]) this.rates.EUR = eurRes.rates[FX_TARGET_CURRENCY];
+      if (jpyRes.rates?.[FX_TARGET_CURRENCY]) this.rates.JPY = jpyRes.rates[FX_TARGET_CURRENCY];
       this.lastFetchedDate = today;
       this.saveToCache();
     } catch (err) {
@@ -56,7 +58,7 @@ class FxRates {
     }
   }
 
-  // Converts an amount in USD or EUR to SGD.
+  // Converts an amount in USD, EUR, or JPY to SGD.
   convertToSGD(amount, fromCurrency) {
     const rate = this.rates[fromCurrency] || FX_FALLBACK_RATES[fromCurrency] || 1;
     return amount * rate;

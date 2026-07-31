@@ -627,9 +627,13 @@ select.form-control {
   font-weight: 700;
   font-size: 0.95rem;
   color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* Wraps instead of truncating - a long name + card number (e.g. a
+     translated Japanese card title) was getting cut off with no way to
+     see the rest without opening the detail modal. A card with an
+     unusually long name is just slightly taller; that's a better
+     trade-off than hiding the number entirely. */
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
 .item-meta {
@@ -746,9 +750,12 @@ select.form-control {
 }
 
 /* Same specificity as the rule above (0-2-1) - wins on source order so
-   the margin row's green/red still shows instead of the default color. */
-.item-detail-row span.margin-positive { color: var(--accent-green); }
-.item-detail-row span.margin-negative { color: var(--accent-red); }
+   a pending/not-yet-cached value shows muted instead of the bold primary
+   text color used for a real number. */
+.item-detail-row span.item-detail-pending {
+  font-weight: 500;
+  color: var(--text-muted);
+}
 
 /* Modals */
 .modal-overlay {

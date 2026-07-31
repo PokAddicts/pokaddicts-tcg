@@ -65,7 +65,16 @@ window.POKEMON_DB = POKEMON_DB;
 
 // Short form for a raw card's condition (e.g. "Lightly Played" -> "LP") -
 // falls back to the original string unchanged for anything not in the
-// table (slab grades like "10 GEM MT" already display as-is elsewhere).
+// table.
 window.formatConditionAbbreviation = function formatConditionAbbreviation(condition) {
   return POKEMON_DB.conditionAbbreviations[condition] || condition;
+};
+
+// Short form for a slab's grade in badges - just the leading number (e.g.
+// "10 GEM MT" -> "10", scanner.js's own label for a perfect PSA 10) so
+// "PSA 10 GEM MT" doesn't blow out the badge's width. Falls back to the
+// original string unchanged if it doesn't start with a number.
+window.formatSlabGradeShort = function formatSlabGradeShort(grade) {
+  const match = (grade || '').match(/^[\d.]+/);
+  return match ? match[0] : (grade || '');
 };

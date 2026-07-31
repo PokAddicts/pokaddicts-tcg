@@ -854,7 +854,7 @@ class PokAddictsScanner {
           <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
             <div>
               <div style="font-weight: 700; font-size: 0.9rem; color: var(--text-primary);">${entry.name}</div>
-              <div style="font-size: 0.72rem; color: var(--text-secondary);">${entry.set || ''}${entry.type === 'slab' ? ` • ${entry.gradingCompany} ${entry.grade}` : ''}${entry.variantLabel ? ` • ${entry.variantLabel}` : ''}</div>
+              <div style="font-size: 0.72rem; color: var(--text-secondary);">${entry.set || ''}${entry.type === 'slab' ? ` • ${entry.gradingCompany} ${window.formatSlabGradeShort(entry.grade)}` : ''}${entry.variantLabel ? ` • ${entry.variantLabel}` : ''}</div>
             </div>
             <span style="color: var(--accent-red); cursor: pointer;" onclick="window.scanner.removeFromScanList('${entry.tempId}')">✕</span>
           </div>

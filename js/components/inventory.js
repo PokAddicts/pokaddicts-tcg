@@ -294,10 +294,13 @@ class InventoryComponent {
     this.renderInventoryPage();
   }
 
-  // Compact single-row card - cost/cert/added-by and the Sell/Trade/
-  // Restock buttons that used to live here moved into the tap-to-open
-  // detail modal instead (see openItemDetailModal), so a tradeshow-sized
-  // list of ~100 items stays scannable without constant scrolling.
+  // Compact card - the cost/cert/added-by line that used to sit here
+  // moved into the tap-to-open detail modal instead (see
+  // openItemDetailModal), so a tradeshow-sized list of ~100 items stays
+  // scannable without constant scrolling. Sell/Trade/Restock stay directly
+  // on the card (with their own stopPropagation so tapping them doesn't
+  // also open the modal) since reaching for the detail view just to sell
+  // a card would slow down a fast-paced tradeshow workflow.
   renderItemCard(item) {
     const isSlab = item.type === 'slab';
     const isSealed = item.type === 'sealed';
@@ -324,7 +327,7 @@ class InventoryComponent {
           <div class="item-details">
             <div class="item-name">${item.name}${hasMultipleQty ? ` <span style="color: var(--text-secondary); font-weight: 600;">x${qty}</span>` : ''}</div>
             <div class="item-meta">
-              <span class="badge ${badgeClass}">${isBinderTier ? 'Price Tier' : (isSlab ? `${item.gradingCompany} ${item.grade}` : (item.grade ? window.formatConditionAbbreviation(item.grade) : item.type))}</span>
+              <span class="badge ${badgeClass}">${isBinderTier ? 'Price Tier' : (isSlab ? `${item.gradingCompany} ${window.formatSlabGradeShort(item.grade)}` : (item.grade ? window.formatConditionAbbreviation(item.grade) : item.type))}</span>
               <span>${item.set || ''}</span>
             </div>
           </div>
@@ -337,11 +340,23 @@ class InventoryComponent {
           </div>
         </div>
 
-        ${item.status !== 'in_stock' ? `
+        ${item.status === 'in_stock' ? `
+          <div class="item-actions" onclick="event.stopPropagation()">
+            <button class="btn btn-green btn-sm item-action-btn" onclick="window.posComp.openQuickSaleModal('${item.id}')">
+              ⚡ Sell
+            </button>
+            <button class="btn btn-secondary btn-sm item-action-btn" onclick="window.tradeComp.addToTrade('${item.id}')">
+              🔄 Trade
+            </button>
+            <button class="btn btn-secondary btn-sm item-action-btn" onclick="window.inventoryComp.openRestockModal('${item.id}')">
+              📥 Restock
+            </button>
+          </div>
+        ` : `
           <div class="badge ${item.status === 'sold' ? 'badge-sold' : 'badge-traded'}">
             ${item.status === 'sold' ? '✓ SOLD' : '⇄ TRADED OUT'}
           </div>
-        ` : ''}
+        `}
       </div>
     `;
   }
@@ -437,15 +452,13 @@ class InventoryComponent {
     const isSealed = item.type === 'sealed';
     const qty = item.quantity || 1;
     const hasMultipleQty = qty > 1;
-    const margin = item.marketValue - item.costBasis;
-    const marginPct = item.costBasis > 0 ? (margin / item.costBasis) * 100 : 0;
 
     let icon = '✨';
     if (isSlab) icon = '🏆';
     if (isSealed) icon = '📦';
     if (item.type === 'binder_tier') icon = '🗂️';
 
-    const conditionLabel = isSlab ? `${item.gradingCompany} ${item.grade}` : (item.grade || item.type);
+    const conditionLabel = isSlab ? `${item.gradingCompany} ${window.formatSlabGradeShort(item.grade)}` : (item.grade || item.type);
 
     return `
       <div style="text-align: center; margin-bottom: 14px;">
@@ -455,13 +468,8 @@ class InventoryComponent {
       </div>
 
       <div class="item-detail-section-title">Pricing</div>
-      <div class="item-detail-row"><span>Cost Basis</span><span>$${item.costBasis.toFixed(2)}${hasMultipleQty ? '/ea' : ''}</span></div>
-      ${hasMultipleQty ? `<div class="item-detail-row"><span>Total Cost</span><span>$${(item.costBasis * qty).toFixed(2)}</span></div>` : ''}
-      <div class="item-detail-row"><span>Market Value</span><span>$${item.marketValue.toFixed(2)}${hasMultipleQty ? '/ea' : ''}</span></div>
-      <div class="item-detail-row"><span>Asking Price</span><span>$${(item.askingPrice ?? item.marketValue).toFixed(2)}</span></div>
-      <div class="item-detail-row"><span>Margin</span><span class="${margin >= 0 ? 'margin-positive' : 'margin-negative'}">${margin >= 0 ? '+' : ''}$${margin.toFixed(2)} (${marginPct.toFixed(0)}%)</span></div>
-
-      ${this.renderCachedMarketDataSection(item)}
+      <div class="item-detail-row"><span>Cost Price</span><span>$${item.costBasis.toFixed(2)}${hasMultipleQty ? '/ea' : ''}</span></div>
+      ${this.renderMarketPriceRows(item)}
 
       <div class="item-detail-section-title">Details</div>
       ${item.certNumber ? `<div class="item-detail-row"><span>Cert #</span><span>${item.certNumber}</span></div>` : ''}
@@ -483,36 +491,50 @@ class InventoryComponent {
     `;
   }
 
-  // Every cached market-data source available for this item's catalog
-  // card - the daily English price cache, SnkrDunk's condition tiers, and
-  // PokeWallet's TCGPlayer/CardMarket variants (Japanese cards) - purely
-  // informational here, unlike the interactive picker in Intake.
-  renderCachedMarketDataSection(item) {
-    if (!item.catalogCardId || !window.cardCatalog) return '';
-    const card = window.cardCatalog.getCardById(item.catalogCardId);
-    if (!card) return '';
+  // Just the market values that actually matter for a resale decision -
+  // English cards: TCG Player, CardMarket, PriceCharting. Japanese cards:
+  // SnkrDunk (the most accurate current-market figure - see
+  // js/snkrdunk-client.js), TCG Player, CardMarket, PriceCharting.
+  // PriceCharting isn't wired up yet (needs a paid API token), shown as a
+  // placeholder so the layout's already there once it is. Anything not
+  // matched to the catalog (manually-typed name, sealed product, binder
+  // tier) has no per-source breakdown to show - just the single market
+  // value recorded at intake.
+  renderMarketPriceRows(item) {
+    const row = (label, value) => `<div class="item-detail-row"><span>${label}</span><span${value ? '' : ' class="item-detail-pending"'}>${value || 'Not cached yet'}</span></div>`;
+    const card = item.catalogCardId && window.cardCatalog ? window.cardCatalog.getCardById(item.catalogCardId) : null;
+
+    if (!card) {
+      return row('Market Value', `$${item.marketValue.toFixed(2)}${item.quantity > 1 ? '/ea' : ''}`);
+    }
 
     const rows = [];
-    const stripSuffix = (source) => (source || '').replace(/\s*\([A-Z]{3}→SGD\)/, '');
 
-    if (card.marketValueSgd > 0 && card.priceUpdatedAt) {
-      rows.push(`<div class="item-detail-row"><span>${stripSuffix(card.priceSource) || 'Cached'}</span><span>S$${card.marketValueSgd.toFixed(2)}</span></div>`);
+    if (card.language === 'ja') {
+      if (card.snkrdunkConditions?.length > 0) {
+        const all = Math.min(...card.snkrdunkConditions.map(c => c.price));
+        rows.push(row('SnkrDunk', `S$${all.toFixed(2)}`));
+      } else {
+        rows.push(row('SnkrDunk'));
+      }
+      const tcg = card.pokewalletVariants?.find(v => (v.source || '').startsWith('TCGPlayer'));
+      const cm = card.pokewalletVariants?.find(v => (v.source || '').startsWith('CardMarket'));
+      rows.push(row('TCG Player', tcg ? `S$${tcg.price.toFixed(2)}` : null));
+      rows.push(row('CardMarket', cm ? `S$${cm.price.toFixed(2)}` : null));
+    } else {
+      // The daily English cache only stores ONE merged "best" price today
+      // (TCGPlayer preferred, CardMarket only as a fallback when there's
+      // no TCGPlayer listing at all - see refresh-catalog-prices), not
+      // both separately yet, so only whichever one was actually cached
+      // shows a real number.
+      const isTcg = (card.priceSource || '').startsWith('TCGPlayer');
+      rows.push(row('TCG Player', card.marketValueSgd > 0 && isTcg ? `S$${card.marketValueSgd.toFixed(2)}` : null));
+      rows.push(row('CardMarket', card.marketValueSgd > 0 && !isTcg ? `S$${card.marketValueSgd.toFixed(2)}` : null));
     }
 
-    if (card.snkrdunkConditions?.length > 0) {
-      const all = Math.min(...card.snkrdunkConditions.map(c => c.price));
-      rows.push(`<div class="item-detail-row"><span>SnkrDunk (All)</span><span>S$${all.toFixed(2)}</span></div>`);
-    }
+    rows.push('<div class="item-detail-row"><span>PriceCharting</span><span class="item-detail-pending">Coming soon</span></div>');
 
-    if (card.pokewalletVariants?.length > 0) {
-      card.pokewalletVariants.forEach(v => {
-        rows.push(`<div class="item-detail-row"><span>${stripSuffix(v.source)} (${v.label})</span><span>S$${v.price.toFixed(2)}</span></div>`);
-      });
-    }
-
-    if (rows.length === 0) return '';
-
-    return `<div class="item-detail-section-title">Cached Market Data</div>${rows.join('')}`;
+    return rows.join('');
   }
 
   openRestockModal(itemId) {

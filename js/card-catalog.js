@@ -77,12 +77,19 @@ function cardRowFromCatalogCard(c) {
 // refresh-catalog-prices Edge Function (English cards only, on a cron
 // schedule - see supabase/schema.sql) rather than by anything in this
 // file, but need to flow through here so search can use them instead of
-// always doing a live lookup.
+// always doing a live lookup. cached_image_url is written the same way by
+// the cache-card-images Edge Function (both languages - see
+// supabase/functions/cache-card-images) - null means "not attempted yet",
+// '' means "attempted, no image found anywhere" (a real, permanent gap,
+// not worth retrying), a real URL means an instant Storage read is
+// available and getCardImageUrl() can skip the live TCGdex/PokeWallet
+// race entirely.
 function catalogCardFromRow(r) {
   return {
     id: r.id, name: r.name, set: r.set_name || '', setId: r.set_id || '', number: r.card_number || '',
     language: r.language || '', image: r.image || '', lowQuality: !!r.low_quality,
-    marketValueSgd: r.market_value_sgd ?? null, priceSource: r.price_source || null, priceUpdatedAt: r.price_updated_at || null
+    marketValueSgd: r.market_value_sgd ?? null, priceSource: r.price_source || null, priceUpdatedAt: r.price_updated_at || null,
+    cachedImageUrl: r.cached_image_url ?? null
   };
 }
 
@@ -532,8 +539,16 @@ class CardCatalog {
   // for some Japanese sets/secret rares means it sometimes has nothing at
   // all, and waiting for that failure before even starting the PokeWallet
   // attempt added a full extra round trip of delay for no reason.
+  //
+  // Checked first: cards.cached_image_url, a permanent Supabase Storage
+  // copy populated by the cache-card-images Edge Function (background
+  // cron, both languages - see supabase/schema.sql). An image never
+  // changes once printed, so once cached it's cached forever - this skips
+  // the TCGdex/PokeWallet race entirely and is why lookups feel instant
+  // for any card someone else has already searched before.
   async getCardImageUrl(catalogCardId, size = 'low') {
     const card = this.getCardById(catalogCardId);
+    if (card?.cachedImageUrl) return card.cachedImageUrl;
 
     const tcgdexPromise = window.tcgdexClient.getImageBlobUrl(catalogCardId, size)
       .catch((err) => { console.warn('TCGdex image fetch failed:', err); return null; });

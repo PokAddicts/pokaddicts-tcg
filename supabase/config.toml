@@ -435,3 +435,9 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/refresh-catalog-prices/deno.json"
 entrypoint = "./functions/refresh-catalog-prices/index.ts"
+
+[functions.cache-card-images]
+enabled = true
+verify_jwt = false
+import_map = "./functions/cache-card-images/deno.json"
+entrypoint = "./functions/cache-card-images/index.ts"

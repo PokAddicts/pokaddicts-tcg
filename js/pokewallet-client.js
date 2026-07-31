@@ -148,7 +148,16 @@ class PokeWalletClient {
   // concurrent callers asking about the same card (see this._matchCache).
   async findCardByNameAndNumber(name, number) {
     if (!this.configured) return null;
-    const query = [name, number].filter(Boolean).join(' ').trim();
+    // PokeWallet's own search silently returns zero results for a query
+    // mixing native Japanese script with Latin text (confirmed directly:
+    // "マグマ団の Numel 001/034" -> 0 results, "Numel 001/034" -> exact
+    // match) - a real gap for cards whose translated name still carries an
+    // untranslated Japanese prefix (e.g. Team Magma/Aqua promo sets, where
+    // only the species word got translated). Stripping non-Latin
+    // characters before querying fixes this without needing a full
+    // translation for every such prefix.
+    const asciiName = (name || '').replace(/[^\x00-\x7F]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const query = [asciiName, number].filter(Boolean).join(' ').trim();
     if (!query) return null;
 
     const cacheKey = query.toLowerCase();

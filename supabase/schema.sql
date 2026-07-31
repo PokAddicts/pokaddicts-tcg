@@ -177,10 +177,12 @@ create table if not exists cards (
   market_value_sgd numeric, -- cached SGD price, refreshed daily by the refresh-catalog-prices Edge Function (English cards only - Japanese pricing stays live via PokeWallet, see js/pokewallet-client.js)
   price_source text, -- e.g. "TCGPlayer (USD->SGD)" - same display label used elsewhere
   price_updated_at timestamptz, -- null = never refreshed yet; search falls back to a live lookup if this is missing or stale
+  cached_image_url text, -- permanent Supabase Storage URL (card-images bucket), populated by the cache-card-images Edge Function. null = not attempted yet; '' = attempted, no image found anywhere (won't be retried); a real URL = instant read, skips the live TCGdex/PokeWallet race entirely. Unlike price, an image never changes once printed, so this is never refreshed/expired.
   created_at timestamptz not null default now()
 );
 create index if not exists cards_name_idx on cards(name);
 create index if not exists cards_price_refresh_idx on cards(language, price_updated_at); -- lets the refresh job cheaply find the oldest-refreshed English cards
+create index if not exists cards_image_cache_idx on cards(language, cached_image_url); -- lets the cache-card-images job cheaply find not-yet-cached cards, split by language (English has no rate limit, Japanese does via PokeWallet)
 
 -- If you already ran this schema before the TCGdex migration, run just
 -- this against your existing database instead:
@@ -192,6 +194,11 @@ create index if not exists cards_price_refresh_idx on cards(language, price_upda
 -- alter table cards add column if not exists price_source text;
 -- alter table cards add column if not exists price_updated_at timestamptz;
 -- create index if not exists cards_price_refresh_idx on cards(language, price_updated_at);
+
+-- If you already ran this schema before permanent image caching was added,
+-- run just this against your existing database instead:
+-- alter table cards add column if not exists cached_image_url text;
+-- create index if not exists cards_image_cache_idx on cards(language, cached_image_url);
 
 -- Single shared row tracking the bulk-import job's progress (which set/
 -- page it's up to), so if multiple phones have the app open, they resume

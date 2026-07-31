@@ -37,7 +37,7 @@ class POSComponent {
             <div class="item-details">
               <div class="item-name">${item.name}${hasMultipleQty ? ` <span style="color: var(--text-secondary); font-weight: 600;">x${item.quantity}</span>` : ''}</div>
               <div class="item-meta">
-                <span class="badge badge-slab">${item.type === 'binder_tier' ? (item.binderName || 'Binder') : (item.type === 'slab' ? `${item.gradingCompany} ${item.grade}` : (item.grade || item.type))}</span>
+                <span class="badge badge-slab">${item.type === 'binder_tier' ? (item.binderName || 'Binder') : (item.type === 'slab' ? `${item.gradingCompany} ${item.grade}` : (item.grade ? window.formatConditionAbbreviation(item.grade) : item.type))}</span>
                 <span>Cost: <strong>$${item.costBasis.toFixed(2)}${hasMultipleQty ? '/ea' : ''}</strong></span>
               </div>
             </div>
@@ -77,7 +77,7 @@ class POSComponent {
 
     body.innerHTML = `
       <div style="text-align: center; margin-bottom: 14px;">
-        <span class="badge badge-slab" style="margin-bottom: 6px;">${item.type.replace('_', ' ').toUpperCase()}${item.type === 'slab' ? ` • ${item.gradingCompany} ${item.grade}` : (item.grade ? ` • ${item.grade}` : '')}</span>
+        <span class="badge badge-slab" style="margin-bottom: 6px;">${item.type.replace('_', ' ').toUpperCase()}${item.type === 'slab' ? ` • ${item.gradingCompany} ${item.grade}` : (item.grade ? ` • ${window.formatConditionAbbreviation(item.grade)}` : '')}</span>
         <h3 style="font-size: 1.2rem; font-weight: 800; color: var(--text-primary);">${item.name}</h3>
         <p style="font-size: 0.82rem; color: var(--text-secondary); margin-top: 2px;">${isBinderTier ? (item.binderName || 'Binder') : (item.set || '')}</p>
       </div>

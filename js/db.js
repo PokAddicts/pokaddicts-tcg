@@ -625,6 +625,9 @@ class PokAddictsDB {
     if (filters.binderName) {
       list = list.filter(i => i.binderName === filters.binderName);
     }
+    if (filters.acquiredBy) {
+      list = list.filter(i => i.acquiredBy === filters.acquiredBy);
+    }
     if (filters.query) {
       const q = filters.query.toLowerCase();
       list = list.filter(i =>
@@ -638,6 +641,15 @@ class PokAddictsDB {
 
   getItemById(id) {
     return this.inventory.find(i => i.id === id);
+  }
+
+  // Distinct team members who have ever added an item, for the inventory
+  // page's "Added by" filter - derived from actual item records rather
+  // than a separate roster, since there's no maintained list of team
+  // members anywhere else in the app (just whatever name each device set
+  // once via the first-run name prompt).
+  getTeamMembersWithItems() {
+    return [...new Set(this.inventory.map(i => i.acquiredBy).filter(Boolean))].sort();
   }
 
   addItem(item) {

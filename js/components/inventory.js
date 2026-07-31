@@ -6,6 +6,7 @@ class InventoryComponent {
   constructor() {
     this.currentFilter = 'all';
     this.currentStatus = 'in_stock';
+    this.currentAcquiredBy = 'all';
     this.searchQuery = '';
     this.viewingBinderName = null;
     this.imageUrlCache = {}; // catalogCardId -> blob URL, so repeated re-renders don't keep re-fetching the same image
@@ -86,9 +87,29 @@ class InventoryComponent {
         </select>
       </div>
 
+      ${this.renderAcquiredByFilterBar()}
+
       <!-- Item List Container -->
       <div class="inventory-list">
         ${this.renderItemListInner()}
+      </div>
+    `;
+  }
+
+  // Only shown once more than one team member has actually added
+  // something - a single-option filter would just be clutter, and there's
+  // no separately-maintained team roster to check against, just whichever
+  // names show up on real item records.
+  renderAcquiredByFilterBar() {
+    const teamMembers = window.db.getTeamMembersWithItems();
+    if (teamMembers.length < 2) return '';
+
+    return `
+      <div style="margin-bottom: 12px;">
+        <select class="form-control" onchange="window.inventoryComp.setAcquiredByFilter(this.value)">
+          <option value="all" ${this.currentAcquiredBy === 'all' ? 'selected' : ''}>👤 Added by: Everyone</option>
+          ${teamMembers.map(m => `<option value="${m}" ${this.currentAcquiredBy === m ? 'selected' : ''}>Added by: ${m}</option>`).join('')}
+        </select>
       </div>
     `;
   }
@@ -101,10 +122,14 @@ class InventoryComponent {
     const flatItems = window.db.getInventory({
       type: this.currentFilter,
       status: this.currentStatus,
-      query: this.searchQuery
+      query: this.searchQuery,
+      acquiredBy: this.currentAcquiredBy === 'all' ? null : this.currentAcquiredBy
     }).filter(i => !i.binderName);
 
-    const showBinderGroups = this.currentFilter === 'all' && this.currentStatus === 'in_stock' && !this.searchQuery;
+    // Binder groups aggregate cards from potentially many different team
+    // members into one card, which doesn't make sense to show while
+    // filtering to just one person's own additions.
+    const showBinderGroups = this.currentFilter === 'all' && this.currentStatus === 'in_stock' && !this.searchQuery && this.currentAcquiredBy === 'all';
     const binderGroups = showBinderGroups ? window.db.getBinderMetrics() : [];
 
     // Deferred to a macrotask (not called directly) - this function's
@@ -295,13 +320,14 @@ class InventoryComponent {
           <div class="item-details">
             <div class="item-name">${item.name}${hasMultipleQty ? ` <span style="color: var(--text-secondary); font-weight: 600;">x${qty}</span>` : ''}</div>
             <div class="item-meta">
-              <span class="badge ${badgeClass}">${isBinderTier ? 'Price Tier' : (isSlab ? `${item.gradingCompany} ${item.grade}` : (item.grade || item.type))}</span>
+              <span class="badge ${badgeClass}">${isBinderTier ? 'Price Tier' : (isSlab ? `${item.gradingCompany} ${item.grade}` : (item.grade ? window.formatConditionAbbreviation(item.grade) : item.type))}</span>
               <span>${item.set || ''}</span>
             </div>
             <div class="item-meta" style="margin-top: 4px;">
               <span>Cost: <strong>$${item.costBasis.toFixed(2)}${hasMultipleQty ? '/ea' : ''}</strong></span>
               ${hasMultipleQty ? `<span>• Total Cost: $${(item.costBasis * qty).toFixed(2)}</span>` : ''}
               ${item.certNumber ? `<span>• Cert #${item.certNumber}</span>` : ''}
+              ${item.acquiredBy ? `<span>• Added by ${item.acquiredBy}</span>` : ''}
             </div>
           </div>
 
@@ -342,6 +368,11 @@ class InventoryComponent {
 
   setStatus(status) {
     this.currentStatus = status;
+    this.renderInventoryPage();
+  }
+
+  setAcquiredByFilter(name) {
+    this.currentAcquiredBy = name;
     this.renderInventoryPage();
   }
 

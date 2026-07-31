@@ -13,6 +13,17 @@ const POKEMON_DB = {
     "Damaged"
   ],
 
+  // Short form shown in inventory/POS item badges, where the full name
+  // ("Lightly Played") takes up too much space next to everything else on
+  // the same line - the dropdown/select still shows the full name.
+  conditionAbbreviations: {
+    "Near Mint": "NM",
+    "Lightly Played": "LP",
+    "Moderately Played": "MP",
+    "Heavily Played": "HP",
+    "Damaged": "DMG"
+  },
+
   // Grading companies offered when logging a graded slab
   gradingCompanies: ["PSA", "BGS", "CGC", "SGC", "TAG", "ACE", "ARS"],
 
@@ -51,3 +62,10 @@ const POKEMON_DB = {
 };
 
 window.POKEMON_DB = POKEMON_DB;
+
+// Short form for a raw card's condition (e.g. "Lightly Played" -> "LP") -
+// falls back to the original string unchanged for anything not in the
+// table (slab grades like "10 GEM MT" already display as-is elsewhere).
+window.formatConditionAbbreviation = function formatConditionAbbreviation(condition) {
+  return POKEMON_DB.conditionAbbreviations[condition] || condition;
+};

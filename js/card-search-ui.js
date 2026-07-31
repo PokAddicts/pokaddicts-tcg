@@ -89,9 +89,15 @@ class CardSearchUI {
   // it stays its own separate group rather than risk mislabeling a price.
   groupVariantsByFinish(allPrices) {
     const GENERIC_LABELS = ['Normal', 'Holo'];
-    const tcgPlayerLabels = new Set(allPrices.filter(p => p.source === 'TCGPlayer').map(p => p.label));
+    // Real source strings carry a currency-conversion suffix (extractAllVariantsSGD
+    // produces "TCGPlayer (USD→SGD)", not plain "TCGPlayer") - matching on
+    // startsWith rather than exact equality was the actual reason this
+    // merge never engaged in production despite passing an isolated test
+    // that used a simplified fake source string without the suffix.
+    const isTcgPlayer = (p) => (p.source || '').startsWith('TCGPlayer');
+    const tcgPlayerLabels = new Set(allPrices.filter(isTcgPlayer).map(p => p.label));
     const namedTcgPlayerLabels = [...new Set(
-      allPrices.filter(p => p.source === 'TCGPlayer' && !GENERIC_LABELS.includes(p.label)).map(p => p.label)
+      allPrices.filter(p => isTcgPlayer(p) && !GENERIC_LABELS.includes(p.label)).map(p => p.label)
     )];
 
     const groups = new Map();

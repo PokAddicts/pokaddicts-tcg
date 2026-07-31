@@ -294,6 +294,10 @@ class InventoryComponent {
     this.renderInventoryPage();
   }
 
+  // Compact single-row card - cost/cert/added-by and the Sell/Trade/
+  // Restock buttons that used to live here moved into the tap-to-open
+  // detail modal instead (see openItemDetailModal), so a tradeshow-sized
+  // list of ~100 items stays scannable without constant scrolling.
   renderItemCard(item) {
     const isSlab = item.type === 'slab';
     const isSealed = item.type === 'sealed';
@@ -313,8 +317,8 @@ class InventoryComponent {
     if (isBinderTier) icon = '🗂️';
 
     return `
-      <div class="item-card">
-        ${item.status === 'in_stock' ? `<span class="item-delete-btn" onclick="window.inventoryComp.deleteItem('${item.id}')">🗑️</span>` : ''}
+      <div class="item-card item-card-compact" onclick="window.inventoryComp.openItemDetailModal('${item.id}')">
+        ${item.status === 'in_stock' ? `<span class="item-delete-btn" onclick="event.stopPropagation(); window.inventoryComp.deleteItem('${item.id}')">🗑️</span>` : ''}
         <div class="item-card-top">
           <div class="item-icon-box" id="item-icon-${item.id}">${icon}</div>
           <div class="item-details">
@@ -322,12 +326,6 @@ class InventoryComponent {
             <div class="item-meta">
               <span class="badge ${badgeClass}">${isBinderTier ? 'Price Tier' : (isSlab ? `${item.gradingCompany} ${item.grade}` : (item.grade ? window.formatConditionAbbreviation(item.grade) : item.type))}</span>
               <span>${item.set || ''}</span>
-            </div>
-            <div class="item-meta" style="margin-top: 4px;">
-              <span>Cost: <strong>$${item.costBasis.toFixed(2)}${hasMultipleQty ? '/ea' : ''}</strong></span>
-              ${hasMultipleQty ? `<span>• Total Cost: $${(item.costBasis * qty).toFixed(2)}</span>` : ''}
-              ${item.certNumber ? `<span>• Cert #${item.certNumber}</span>` : ''}
-              ${item.acquiredBy ? `<span>• Added by ${item.acquiredBy}</span>` : ''}
             </div>
           </div>
 
@@ -339,23 +337,11 @@ class InventoryComponent {
           </div>
         </div>
 
-        ${item.status === 'in_stock' ? `
-          <div class="item-actions">
-            <button class="btn btn-green btn-sm item-action-btn" onclick="window.posComp.openQuickSaleModal('${item.id}')">
-              ⚡ Sell
-            </button>
-            <button class="btn btn-secondary btn-sm item-action-btn" onclick="window.tradeComp.addToTrade('${item.id}')">
-              🔄 Trade
-            </button>
-            <button class="btn btn-secondary btn-sm item-action-btn" onclick="window.inventoryComp.openRestockModal('${item.id}')">
-              📥 Restock
-            </button>
-          </div>
-        ` : `
-          <div class="badge ${item.status === 'sold' ? 'badge-sold' : 'badge-traded'}" style="margin-top: 6px;">
+        ${item.status !== 'in_stock' ? `
+          <div class="badge ${item.status === 'sold' ? 'badge-sold' : 'badge-traded'}">
             ${item.status === 'sold' ? '✓ SOLD' : '⇄ TRADED OUT'}
           </div>
-        `}
+        ` : ''}
       </div>
     `;
   }
@@ -408,6 +394,125 @@ class InventoryComponent {
       window.app.showToast('Item deleted');
       this.renderInventoryPage();
     }
+  }
+
+  // Opens the tap-to-view detail modal for one inventory item - full
+  // name/condition, cost/margin math, every cached market-data source
+  // available for this catalog card, and the Sell/Trade/Restock actions
+  // that used to live directly on the (now much more compact) list card.
+  openItemDetailModal(itemId) {
+    const item = window.db.getItemById(itemId);
+    if (!item) return;
+
+    const modal = document.getElementById('item-detail-modal');
+    const body = document.getElementById('item-detail-modal-body');
+    if (!modal || !body) return;
+
+    body.innerHTML = this.renderItemDetailBody(item);
+    modal.classList.add('active');
+
+    // Deferred so the modal's own image slot exists in the DOM first -
+    // same cache-hit-runs-synchronously timing issue as the list view's
+    // images (see loadItemImages).
+    if (item.type === 'raw' && item.catalogCardId) {
+      setTimeout(() => this.loadItemDetailImage(item), 0);
+    }
+  }
+
+  async loadItemDetailImage(item) {
+    const el = document.getElementById('item-detail-image');
+    if (!el || !window.cardCatalog) return;
+    try {
+      const url = await window.cardCatalog.getCardImageUrl(item.catalogCardId, 'high');
+      if (!url) return;
+      const safeName = item.name.replace(/'/g, "\\'");
+      el.innerHTML = `<img src="${url}" alt="${item.name}" style="cursor: zoom-in;" onclick="window.openImageViewer('${url}', '${safeName}')">`;
+    } catch (err) {
+      console.warn('Item detail image fetch failed:', err);
+    }
+  }
+
+  renderItemDetailBody(item) {
+    const isSlab = item.type === 'slab';
+    const isSealed = item.type === 'sealed';
+    const qty = item.quantity || 1;
+    const hasMultipleQty = qty > 1;
+    const margin = item.marketValue - item.costBasis;
+    const marginPct = item.costBasis > 0 ? (margin / item.costBasis) * 100 : 0;
+
+    let icon = '✨';
+    if (isSlab) icon = '🏆';
+    if (isSealed) icon = '📦';
+    if (item.type === 'binder_tier') icon = '🗂️';
+
+    const conditionLabel = isSlab ? `${item.gradingCompany} ${item.grade}` : (item.grade || item.type);
+
+    return `
+      <div style="text-align: center; margin-bottom: 14px;">
+        <div class="item-detail-image-box" id="item-detail-image">${icon}</div>
+        <h3 style="font-size: 1.1rem; font-weight: 800; margin-top: 10px;">${item.name}${hasMultipleQty ? ` <span style="color: var(--text-secondary);">x${qty}</span>` : ''}</h3>
+        <div style="font-size: 0.82rem; color: var(--text-secondary);">${item.set || ''}${conditionLabel ? ' • ' + conditionLabel : ''}</div>
+      </div>
+
+      <div class="item-detail-section-title">Pricing</div>
+      <div class="item-detail-row"><span>Cost Basis</span><span>$${item.costBasis.toFixed(2)}${hasMultipleQty ? '/ea' : ''}</span></div>
+      ${hasMultipleQty ? `<div class="item-detail-row"><span>Total Cost</span><span>$${(item.costBasis * qty).toFixed(2)}</span></div>` : ''}
+      <div class="item-detail-row"><span>Market Value</span><span>$${item.marketValue.toFixed(2)}${hasMultipleQty ? '/ea' : ''}</span></div>
+      <div class="item-detail-row"><span>Asking Price</span><span>$${(item.askingPrice ?? item.marketValue).toFixed(2)}</span></div>
+      <div class="item-detail-row"><span>Margin</span><span class="${margin >= 0 ? 'margin-positive' : 'margin-negative'}">${margin >= 0 ? '+' : ''}$${margin.toFixed(2)} (${marginPct.toFixed(0)}%)</span></div>
+
+      ${this.renderCachedMarketDataSection(item)}
+
+      <div class="item-detail-section-title">Details</div>
+      ${item.certNumber ? `<div class="item-detail-row"><span>Cert #</span><span>${item.certNumber}</span></div>` : ''}
+      <div class="item-detail-row"><span>Quantity</span><span>${qty}</span></div>
+      ${item.acquiredBy ? `<div class="item-detail-row"><span>Added by</span><span>${item.acquiredBy}</span></div>` : ''}
+      ${item.acquiredDate ? `<div class="item-detail-row"><span>Acquired</span><span>${item.acquiredDate}</span></div>` : ''}
+
+      ${item.status === 'in_stock' ? `
+        <div class="item-actions" style="margin-top: 16px;">
+          <button class="btn btn-green btn-sm item-action-btn" onclick="document.getElementById('item-detail-modal').classList.remove('active'); window.posComp.openQuickSaleModal('${item.id}')">⚡ Sell</button>
+          <button class="btn btn-secondary btn-sm item-action-btn" onclick="document.getElementById('item-detail-modal').classList.remove('active'); window.tradeComp.addToTrade('${item.id}')">🔄 Trade</button>
+          <button class="btn btn-secondary btn-sm item-action-btn" onclick="document.getElementById('item-detail-modal').classList.remove('active'); window.inventoryComp.openRestockModal('${item.id}')">📥 Restock</button>
+        </div>
+      ` : `
+        <div class="badge ${item.status === 'sold' ? 'badge-sold' : 'badge-traded'}" style="margin-top: 14px;">
+          ${item.status === 'sold' ? '✓ SOLD' : '⇄ TRADED OUT'}
+        </div>
+      `}
+    `;
+  }
+
+  // Every cached market-data source available for this item's catalog
+  // card - the daily English price cache, SnkrDunk's condition tiers, and
+  // PokeWallet's TCGPlayer/CardMarket variants (Japanese cards) - purely
+  // informational here, unlike the interactive picker in Intake.
+  renderCachedMarketDataSection(item) {
+    if (!item.catalogCardId || !window.cardCatalog) return '';
+    const card = window.cardCatalog.getCardById(item.catalogCardId);
+    if (!card) return '';
+
+    const rows = [];
+    const stripSuffix = (source) => (source || '').replace(/\s*\([A-Z]{3}→SGD\)/, '');
+
+    if (card.marketValueSgd > 0 && card.priceUpdatedAt) {
+      rows.push(`<div class="item-detail-row"><span>${stripSuffix(card.priceSource) || 'Cached'}</span><span>S$${card.marketValueSgd.toFixed(2)}</span></div>`);
+    }
+
+    if (card.snkrdunkConditions?.length > 0) {
+      const all = Math.min(...card.snkrdunkConditions.map(c => c.price));
+      rows.push(`<div class="item-detail-row"><span>SnkrDunk (All)</span><span>S$${all.toFixed(2)}</span></div>`);
+    }
+
+    if (card.pokewalletVariants?.length > 0) {
+      card.pokewalletVariants.forEach(v => {
+        rows.push(`<div class="item-detail-row"><span>${stripSuffix(v.source)} (${v.label})</span><span>S$${v.price.toFixed(2)}</span></div>`);
+      });
+    }
+
+    if (rows.length === 0) return '';
+
+    return `<div class="item-detail-section-title">Cached Market Data</div>${rows.join('')}`;
   }
 
   openRestockModal(itemId) {

@@ -574,6 +574,17 @@ select.form-control {
   border-color: var(--border-active);
 }
 
+/* Compact list card (tap opens the full detail modal - see
+   openItemDetailModal) - tighter padding than the base .item-card since
+   this variant only ever holds the single .item-card-top row, no cost/
+   cert/added-by line and no action buttons, so a tradeshow-sized list of
+   ~100 items stays scannable without constant scrolling. */
+.item-card-compact {
+  padding: 10px 30px 10px 12px;
+  gap: 4px;
+  cursor: pointer;
+}
+
 /* Icon/details/pricing row - kept as its own row (rather than the whole
    card) so .item-actions below can span the full card width instead of
    being squeezed into whatever space .item-details has left. */
@@ -687,6 +698,57 @@ select.form-control {
   z-index: 2;
   padding: 2px 4px;
 }
+
+/* Item Detail Modal (tap any inventory card) */
+.item-detail-image-box {
+  width: 140px;
+  height: 196px; /* same 2.5:3.5 trading-card aspect ratio as .item-icon-box */
+  margin: 0 auto;
+  border-radius: 10px;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 3rem;
+  overflow: hidden;
+}
+
+.item-detail-image-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.item-detail-section-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 14px 0 6px;
+}
+
+.item-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.item-detail-row span:last-child {
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Same specificity as the rule above (0-2-1) - wins on source order so
+   the margin row's green/red still shows instead of the default color. */
+.item-detail-row span.margin-positive { color: var(--accent-green); }
+.item-detail-row span.margin-negative { color: var(--accent-red); }
 
 /* Modals */
 .modal-overlay {

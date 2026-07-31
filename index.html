@@ -267,6 +267,17 @@
     </div>
   </div>
 
+  <!-- Modal: Item Detail (tap any inventory card) -->
+  <div id="item-detail-modal" class="modal-overlay">
+    <div class="modal-container" style="max-height: 92vh; overflow-y: auto;">
+      <div class="modal-header">
+        <h3 class="modal-title">Card Details</h3>
+        <button class="close-btn" onclick="document.getElementById('item-detail-modal').classList.remove('active')">✕</button>
+      </div>
+      <div id="item-detail-modal-body"></div>
+    </div>
+  </div>
+
   <!-- Modal: Add Card Received (Trade Studio) -->
   <div id="acquired-item-modal" class="modal-overlay">
     <div class="modal-container">

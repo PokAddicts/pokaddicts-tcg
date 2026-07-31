@@ -168,15 +168,16 @@ class TCGdexClient {
       }
     }
 
-    // Only fall back to CardMarket variants if TCGPlayer had none at all
-    // (the norm for Japanese-only cards) - don't mix currencies/sources
-    // within the same variant list. CardMarket only distinguishes
-    // normal vs. holo, not every TCGPlayer-style sub-variant.
-    if (variants.length === 0) {
-      const cm = cardDetail?.pricing?.cardmarket;
-      if (cm?.avg) variants.push({ label: 'Normal', price: cm.avg, currency: 'EUR', source: 'CardMarket' });
-      if (cm?.['avg-holo']) variants.push({ label: 'Holo', price: cm['avg-holo'], currency: 'EUR', source: 'CardMarket' });
-    }
+    // CardMarket price(s) are always included alongside TCGPlayer's, not
+    // just as a fallback when TCGPlayer has none - genuinely a different
+    // marketplace (EU vs US) whose price can diverge meaningfully, and
+    // this app has always shown both side by side (a previous fix that
+    // gated this behind "only if TCGPlayer is empty" was a real
+    // regression - it silently dropped CardMarket for every card that had
+    // ANY TCGPlayer variant, i.e. almost all English cards).
+    const cm = cardDetail?.pricing?.cardmarket;
+    if (cm?.avg) variants.push({ label: 'Normal', price: cm.avg, currency: 'EUR', source: 'CardMarket' });
+    if (cm?.['avg-holo']) variants.push({ label: 'Holo', price: cm['avg-holo'], currency: 'EUR', source: 'CardMarket' });
 
     return variants;
   }

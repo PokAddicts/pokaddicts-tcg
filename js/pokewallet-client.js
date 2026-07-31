@@ -124,12 +124,14 @@ class PokeWalletClient {
       if (p.market_price) variants.push({ label: p.sub_type_name || 'Normal', price: p.market_price, currency: 'USD', source: 'TCGPlayer' });
     });
 
-    if (variants.length === 0) {
-      const cmPrices = cardDetail?.cardmarket?.prices || [];
-      cmPrices.forEach(p => {
-        if (p.avg) variants.push({ label: p.variant_type || 'Normal', price: p.avg, currency: 'EUR', source: 'CardMarket' });
-      });
-    }
+    // CardMarket price(s) are always included alongside TCGPlayer's, not
+    // just as a fallback when TCGPlayer has none - genuinely a different
+    // marketplace (EU vs US) whose price can diverge meaningfully, and
+    // this app has always shown both side by side.
+    const cmPrices = cardDetail?.cardmarket?.prices || [];
+    cmPrices.forEach(p => {
+      if (p.avg) variants.push({ label: p.variant_type || 'Normal', price: p.avg, currency: 'EUR', source: 'CardMarket' });
+    });
 
     return variants;
   }

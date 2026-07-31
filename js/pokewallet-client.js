@@ -127,10 +127,22 @@ class PokeWalletClient {
     // CardMarket price(s) are always included alongside TCGPlayer's, not
     // just as a fallback when TCGPlayer has none - genuinely a different
     // marketplace (EU vs US) whose price can diverge meaningfully, and
-    // this app has always shown both side by side.
+    // this app has always shown both side by side. Normalized to the same
+    // capitalized "Normal"/"Holo" convention tcgdex-client.js uses for its
+    // own CardMarket extraction - PokeWallet's raw variant_type comes back
+    // lowercase ("normal"/"holo"), and card-search-ui.js's
+    // groupVariantsByFinish() only recognizes the capitalized form when
+    // deciding whether a generic CardMarket bucket should merge into a
+    // card's one real named finish - a real, confirmed bug otherwise: a
+    // holo-only card (e.g. Magikarp 080/073, an Art Rare with only a
+    // TCGPlayer "Holofoil" listing) showed a fake second "Normal" variant
+    // because CardMarket's lowercase "normal" label never matched.
     const cmPrices = cardDetail?.cardmarket?.prices || [];
     cmPrices.forEach(p => {
-      if (p.avg) variants.push({ label: p.variant_type || 'Normal', price: p.avg, currency: 'EUR', source: 'CardMarket' });
+      if (p.avg) {
+        const label = (p.variant_type || '').toLowerCase() === 'holo' ? 'Holo' : 'Normal';
+        variants.push({ label, price: p.avg, currency: 'EUR', source: 'CardMarket' });
+      }
     });
 
     return variants;

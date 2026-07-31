@@ -72,21 +72,34 @@ class CardSearchUI {
   // TCGPlayer's per-key variants already have their own distinct label
   // (e.g. "Reverse Holofoil") and become their own group as-is. CardMarket
   // only distinguishes "Normal" vs a generic "Holo" (no finer finish
-  // detail), so: its "Normal" merges into an existing "Normal" group
-  // (same finish, different marketplace); its "Holo" merges into the
-  // single non-Normal finish this card has, IF there's exactly one
-  // candidate (the common case, e.g. Gastly's only holo finish is Reverse
-  // Holofoil) - with 0 or 2+ candidates there's no safe way to guess which
-  // one CardMarket's number actually refers to, so it stays its own
-  // separate "Holo" group rather than risk mislabeling a price.
+  // detail) - a CardMarket entry merges into TCGPlayer's own entry of the
+  // EXACT same label if one exists (e.g. both say "Normal" - same finish,
+  // different marketplace); otherwise it merges into the single
+  // non-generic finish TCGPlayer actually has, IF there's exactly one
+  // candidate. This covers two real, confirmed cases: Gastly (TCGPlayer
+  // has both "Normal" and "Reverse Holofoil" - CardMarket's "Holo" merges
+  // into "Reverse Holofoil" since that's the only non-generic option) and
+  // Magikarp 080/073 (TCGPlayer has ONLY "Holofoil", no "Normal" listing
+  // at all - CardMarket's "Normal" must merge into "Holofoil" too, since
+  // this card is genuinely holo-only and CardMarket's price is for that
+  // same card, just filed under their generic default bucket rather than
+  // a real second non-holo print). With 0 or 2+ non-generic candidates
+  // (e.g. Blaine's Moltres, which has two TCGPlayer editions) there's no
+  // safe way to guess which one a generic CardMarket price refers to, so
+  // it stays its own separate group rather than risk mislabeling a price.
   groupVariantsByFinish(allPrices) {
-    const nonNormalLabels = [...new Set(
-      allPrices.filter(p => p.label !== 'Normal' && p.label !== 'Holo').map(p => p.label)
+    const GENERIC_LABELS = ['Normal', 'Holo'];
+    const tcgPlayerLabels = new Set(allPrices.filter(p => p.source === 'TCGPlayer').map(p => p.label));
+    const namedTcgPlayerLabels = [...new Set(
+      allPrices.filter(p => p.source === 'TCGPlayer' && !GENERIC_LABELS.includes(p.label)).map(p => p.label)
     )];
 
     const groups = new Map();
     for (const p of allPrices) {
-      const label = (p.label === 'Holo' && nonNormalLabels.length === 1) ? nonNormalLabels[0] : (p.label || 'Normal');
+      let label = p.label || 'Normal';
+      if (GENERIC_LABELS.includes(label) && !tcgPlayerLabels.has(label) && namedTcgPlayerLabels.length === 1) {
+        label = namedTcgPlayerLabels[0];
+      }
       if (!groups.has(label)) groups.set(label, { label, entries: [] });
       groups.get(label).entries.push({ price: p.price, source: p.source });
     }

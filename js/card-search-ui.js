@@ -13,17 +13,28 @@ class CardSearchUI {
     this.onConfirmCallback = null;
     this.resolvedCard = null;
     this.debounceTimer = null;
+    this.isGradedSlab = () => false;
   }
 
   // ids: { inputId, dropdownId, previewId }
   // onConfirm(card) fires with { name, set, marketValue, catalogCardId }
   // once the user taps "Use This Card" on the preview.
-  attach(ids, onConfirm) {
+  // options.isGradedSlab: a () => boolean checked at price-render time
+  // (not captured once here) - SnkrDunk prices Japanese cards by
+  // CONDITION, including both raw grades (A/B/C/D) and third-party graded
+  // ones (PSA 9/10, ARS 10, etc.), and only one set makes sense to show
+  // depending on whether the item being added is itself a graded slab or
+  // a raw card. Checking it fresh each time (rather than once at attach())
+  // matters because the caller's raw/slab toggle can change after
+  // attaching without necessarily re-attaching (e.g. Intake's type
+  // selector swaps form sections in place).
+  attach(ids, onConfirm, options = {}) {
     const input = document.getElementById(ids.inputId);
     if (!input) return;
 
     this.ids = ids;
     this.onConfirmCallback = onConfirm;
+    this.isGradedSlab = options.isGradedSlab || (() => false);
     this.resolvedCard = null;
 
     input.oninput = () => {
@@ -267,17 +278,45 @@ class CardSearchUI {
   // see selectCard() for the instant provisional price shown from cache
   // while this resolves.
   async fetchAllPricesForCard(cardId, cardLang, name, number) {
-    if (cardLang === 'ja' && window.pokeWalletClient?.configured) {
-      try {
-        const match = await window.pokeWalletClient.findCardByNameAndNumber(name, number);
-        if (match) {
-          const detail = await window.pokeWalletClient.getCard(match.id);
-          const variants = window.pokeWalletClient.extractAllVariantsSGD(detail);
-          if (variants.length > 0) return variants;
-        }
-      } catch (err) {
-        console.warn('PokeWallet price fetch failed, falling back to TCGdex:', err);
-      }
+    if (cardLang === 'ja') {
+      // PokeWallet (finish-based: Normal/Holo/etc.) and SnkrDunk
+      // (condition/grade-based: raw A/B/D, PSA 9/10, etc. - SnkrDunk deals
+      // in graded cards too) fetched at the same time, not one after the
+      // other - they're independent sources so there's no reason to wait
+      // for one before starting the other.
+      const [pokeWalletPrices, snkrDunkPrices] = await Promise.all([
+        (async () => {
+          if (!window.pokeWalletClient?.configured) return [];
+          try {
+            const match = await window.pokeWalletClient.findCardByNameAndNumber(name, number);
+            if (!match) return [];
+            const detail = await window.pokeWalletClient.getCard(match.id);
+            return window.pokeWalletClient.extractAllVariantsSGD(detail);
+          } catch (err) {
+            console.warn('PokeWallet price fetch failed:', err);
+            return [];
+          }
+        })(),
+        (async () => {
+          if (!window.snkrDunkClient?.configured) return [];
+          try {
+            const match = await window.snkrDunkClient.findCardByNameAndNumber(name, number);
+            if (!match) return [];
+            const conditions = await window.snkrDunkClient.getConditionPrices(match.id);
+            const wantGraded = this.isGradedSlab();
+            // Only one set makes sense at a time - a raw card intake
+            // showing PSA 10 prices (or a graded-slab intake showing raw
+            // "A" condition prices) would be actively misleading.
+            return window.snkrDunkClient.extractConditionPricesSGD(conditions).filter(c => c.graded === wantGraded);
+          } catch (err) {
+            console.warn('SnkrDunk price fetch failed:', err);
+            return [];
+          }
+        })(),
+      ]);
+
+      const combined = [...pokeWalletPrices, ...snkrDunkPrices];
+      if (combined.length > 0) return combined;
     }
 
     try {

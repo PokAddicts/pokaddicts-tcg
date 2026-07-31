@@ -75,7 +75,8 @@ class IntakeComponent {
           sellingInput.value = card.marketValue.toFixed(2);
         }
         this.selectedCatalogCardId = card.catalogCardId;
-      }
+      },
+      { isGradedSlab: () => this.intakeType === 'slab' }
     );
   }
 

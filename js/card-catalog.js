@@ -550,19 +550,35 @@ class CardCatalog {
     const card = this.getCardById(catalogCardId);
     if (card?.cachedImageUrl) return card.cachedImageUrl;
 
-    const tcgdexPromise = window.tcgdexClient.getImageBlobUrl(catalogCardId, size)
-      .catch((err) => { console.warn('TCGdex image fetch failed:', err); return null; });
+    // TCGdex's own URL can't be re-fetched client-side to feed the
+    // permanent cache (see tcgdex-client.js - no CORS support), so it's
+    // marked non-cacheable here; the server-side cache-card-images cron
+    // already covers it without any CORS restriction. Only a PokeWallet
+    // result (a real blob: URL from our own CORS-enabled proxy) is
+    // actually fetchable client-side, so only that gets cached below.
+    const tcgdexPromise = window.tcgdexClient.getImageUrl(catalogCardId, size)
+      .then((url) => ({ url, cacheable: false }))
+      .catch((err) => { console.warn('TCGdex image fetch failed:', err); return { url: null, cacheable: false }; });
 
     const pokeWalletPromise = (async () => {
-      if (!window.pokeWalletClient?.configured || !card) return null;
+      // Skipped entirely once TCGdex already has an image for this card -
+      // firing it anyway would waste a PokeWallet request that's
+      // essentially never going to win the race (TCGdex now resolves near
+      // instantly, since it's just a URL, not a fetch) AND was quietly
+      // exhausting PokeWallet's hourly quota (100/hour) on lookups that
+      // never even needed it - confirmed directly: ordinary usage plus
+      // the background image-cache backfill pushed hourly usage to
+      // 200/100, breaking every Japanese lookup for the rest of that hour.
+      if (!window.pokeWalletClient?.configured || !card || card.image) return { url: null, cacheable: false };
       try {
         const displayName = this.translateJapaneseName(card.name) || card.name;
         const match = await window.pokeWalletClient.findCardByNameAndNumber(displayName, card.number);
-        if (!match) return null;
-        return await window.pokeWalletClient.getImageBlobUrl(match.id, size);
+        if (!match) return { url: null, cacheable: false };
+        const url = await window.pokeWalletClient.getImageBlobUrl(match.id, size);
+        return { url, cacheable: true };
       } catch (err) {
         console.warn('PokeWallet image fetch failed:', err);
-        return null;
+        return { url: null, cacheable: false };
       }
     })();
 
@@ -571,7 +587,7 @@ class CardCatalog {
       let remaining = contenders.length;
       let settled = false;
       contenders.forEach((p) => {
-        p.then((url) => {
+        p.then(({ url, cacheable }) => {
           if (!settled && url) {
             settled = true;
             resolve(url);
@@ -584,7 +600,7 @@ class CardCatalog {
             // ones worth caching first - this is what makes a SECOND
             // lookup of the same card (from any device) instant, without
             // waiting on the bulk sweep at all.
-            if (card && size === 'low') this.cacheImagePermanently(card.id, url);
+            if (card && size === 'low' && cacheable) this.cacheImagePermanently(card.id, url);
           }
           remaining -= 1;
           if (remaining === 0 && !settled) resolve(null);

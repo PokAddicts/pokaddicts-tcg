@@ -69,7 +69,19 @@ class TCGdexClient {
     return (results || []).slice(0, limit);
   }
 
-  async getImageBlobUrl(id, quality = 'low') {
+  // Returns the plain image URL directly - deliberately NOT fetched into a
+  // blob URL. TCGdex's asset CDN (assets.tcgdex.net) sends no CORS headers
+  // at all (confirmed directly: no Access-Control-Allow-Origin on the real
+  // GET response, and a bare 405 on an OPTIONS preflight), so a fetch()
+  // call to it is blocked outright by a real browser - curl and
+  // server-side code (this app's own Edge Functions) don't enforce CORS,
+  // which is exactly why this went unnoticed through every test so far
+  // and only surfaced once a real device hit it. A plain <img src> load is
+  // NOT subject to CORS the way fetch()/XHR is, so handing back the URL
+  // directly (for the caller to drop straight into an <img> tag) is what
+  // actually makes these images display, instead of silently failing and
+  // leaving PokeWallet's rate-limited fallback to do ALL the real work.
+  async getImageUrl(id, quality = 'low') {
     const cached = window.cardCatalog ? window.cardCatalog.getCardById(id) : null;
     let imageBase = cached?.image;
 
@@ -80,10 +92,7 @@ class TCGdexClient {
     }
     if (!imageBase) return null;
 
-    const res = await fetch(`${imageBase}/${quality}.webp`);
-    if (!res.ok) throw new Error(`TCGdex image fetch failed ${res.status}`);
-    const blob = await res.blob();
-    return URL.createObjectURL(blob);
+    return `${imageBase}/${quality}.webp`;
   }
 
   // TCGPlayer (USD) is the primary figure, preferring the "normal"

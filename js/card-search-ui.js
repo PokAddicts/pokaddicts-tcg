@@ -51,6 +51,88 @@ class CardSearchUI {
     return source;
   }
 
+  // Groups a flat variant/price list (extractAllVariantsSGD's shape -
+  // {label, price, source}, one entry per marketplace×finish combination)
+  // by physical FINISH, so the UI can ask "which finish is this copy?"
+  // first (Normal / Reverse Holofoil / 1st Edition Holofoil / etc.), then
+  // show every marketplace's price for whichever finish gets picked -
+  // instead of a flat list mixing finishes and marketplaces together.
+  //
+  // TCGPlayer's per-key variants already have their own distinct label
+  // (e.g. "Reverse Holofoil") and become their own group as-is. CardMarket
+  // only distinguishes "Normal" vs a generic "Holo" (no finer finish
+  // detail), so: its "Normal" merges into an existing "Normal" group
+  // (same finish, different marketplace); its "Holo" merges into the
+  // single non-Normal finish this card has, IF there's exactly one
+  // candidate (the common case, e.g. Gastly's only holo finish is Reverse
+  // Holofoil) - with 0 or 2+ candidates there's no safe way to guess which
+  // one CardMarket's number actually refers to, so it stays its own
+  // separate "Holo" group rather than risk mislabeling a price.
+  groupVariantsByFinish(allPrices) {
+    const nonNormalLabels = [...new Set(
+      allPrices.filter(p => p.label !== 'Normal' && p.label !== 'Holo').map(p => p.label)
+    )];
+
+    const groups = new Map();
+    for (const p of allPrices) {
+      const label = (p.label === 'Holo' && nonNormalLabels.length === 1) ? nonNormalLabels[0] : (p.label || 'Normal');
+      if (!groups.has(label)) groups.set(label, { label, entries: [] });
+      groups.get(label).entries.push({ price: p.price, source: p.source });
+    }
+    return Array.from(groups.values());
+  }
+
+  // Renders the two-step finish -> source-price picker into priceLine,
+  // wiring up click handlers that update this.resolvedCard.marketValue as
+  // the user narrows down the exact physical variant. Defaults to the
+  // first finish and its first source (same effective default as before
+  // this picker existed).
+  renderPriceGroups(priceLine, groups) {
+    let selectedGroup = 0;
+    let selectedSource = 0;
+
+    const setMarketValue = () => {
+      this.resolvedCard.marketValue = groups[selectedGroup].entries[selectedSource].price;
+    };
+
+    const renderSources = () => {
+      const sourceRow = priceLine.querySelector('.price-source-row');
+      const entries = groups[selectedGroup].entries;
+      sourceRow.innerHTML = entries.map((e, i) => `
+        <button type="button" class="price-source-chip${i === selectedSource ? ' selected' : ''}" data-source="${i}">
+          S$${e.price.toFixed(2)} (${this.formatPriceSource(e.source)})
+        </button>
+      `).join('');
+      sourceRow.querySelectorAll('.price-source-chip').forEach((chip, i) => {
+        chip.addEventListener('click', () => {
+          selectedSource = i;
+          setMarketValue();
+          sourceRow.querySelectorAll('.price-source-chip').forEach((c) => c.classList.remove('selected'));
+          chip.classList.add('selected');
+        });
+      });
+    };
+
+    priceLine.innerHTML = `<div class="price-finish-row"></div><div class="price-source-row"></div>`;
+    const finishRow = priceLine.querySelector('.price-finish-row');
+    finishRow.innerHTML = groups.map((g, i) => `
+      <button type="button" class="price-variant-chip${i === 0 ? ' selected' : ''}" data-finish="${i}">${g.label}</button>
+    `).join('');
+    finishRow.querySelectorAll('.price-variant-chip').forEach((chip, i) => {
+      chip.addEventListener('click', () => {
+        selectedGroup = i;
+        selectedSource = 0;
+        setMarketValue();
+        finishRow.querySelectorAll('.price-variant-chip').forEach((c) => c.classList.remove('selected'));
+        chip.classList.add('selected');
+        renderSources();
+      });
+    });
+
+    setMarketValue();
+    renderSources();
+  }
+
   renderRows(cards) {
     return cards.map(c => {
       // TCGdex's Japanese catalog inconsistently stores cards under their
@@ -309,36 +391,22 @@ class CardSearchUI {
 
     const pricePromise = this.fetchAllPricesForCard(cardId, cardLang, displayName, card.number)
       .then((allPrices) => {
-        // Multiple sub-variants (Normal, Reverse Holofoil, 1st Edition,
-        // etc.) can have very different market values for the exact same
-        // card/set/number - defaults to the first one (same as before),
-        // but each is shown as its own clickable chip so the actual
-        // physical copy's finish can be picked, updating the stored
-        // market value to match.
-        this.resolvedCard.marketValue = allPrices[0]?.price || 0;
         if (allPrices.length > 0) gotPrice = true;
 
         const priceLine = document.getElementById('card-search-price-line');
-        if (priceLine) {
-          if (allPrices.length === 0) {
-            priceLine.textContent = 'No live price found';
-          } else {
-            priceLine.innerHTML = allPrices.map((p, i) => `
-              <button type="button" class="price-variant-chip${i === 0 ? ' selected' : ''}" data-index="${i}" title="${this.formatPriceSource(p.source)}">
-                ${p.label ? p.label + ': ' : ''}S$${p.price.toFixed(2)}
-              </button>
-            `).join('');
-            priceLine.querySelectorAll('.price-variant-chip').forEach((chip) => {
-              chip.addEventListener('click', () => {
-                const variant = allPrices[Number(chip.dataset.index)];
-                if (!variant) return;
-                this.resolvedCard.marketValue = variant.price;
-                priceLine.querySelectorAll('.price-variant-chip').forEach((c) => c.classList.remove('selected'));
-                chip.classList.add('selected');
-              });
-            });
-          }
+        if (!priceLine) return;
+
+        if (allPrices.length === 0) {
+          this.resolvedCard.marketValue = 0;
+          priceLine.textContent = 'No live price found';
+          return;
         }
+
+        // Pick the FINISH first (Normal / Reverse Holofoil / 1st Edition
+        // Holofoil / etc. - whichever this card actually has), then show
+        // every marketplace's price for that finish below - rather than a
+        // flat list mixing finishes and marketplaces together.
+        this.renderPriceGroups(priceLine, this.groupVariantsByFinish(allPrices));
       })
       .catch((err) => {
         console.error('Live price lookup failed:', err);

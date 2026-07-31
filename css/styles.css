@@ -764,10 +764,21 @@ select.form-control {
   cursor: pointer;
 }
 
-/* Selectable price-variant chips (Intake's confirm-preview) - one per
-   sub-variant a card has (Normal, Reverse Holofoil, 1st Edition, etc.),
-   clicking one sets it as the stored market value. */
-.price-variant-chip {
+/* Two-step price picker (Intake's confirm-preview): .price-finish-row
+   lets you pick the physical FINISH first (Normal / Reverse Holofoil /
+   1st Edition Holofoil / etc. - whichever this card actually has), then
+   .price-source-row shows every marketplace's price (TCG Player,
+   CardMarket) for whichever finish is selected. */
+.price-finish-row, .price-source-row {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.price-source-row {
+  margin-top: 2px;
+}
+
+.price-variant-chip, .price-source-chip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -782,7 +793,13 @@ select.form-control {
   cursor: pointer;
 }
 
-.price-variant-chip.selected {
+.price-source-chip {
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 3px 8px;
+}
+
+.price-variant-chip.selected, .price-source-chip.selected {
   border-color: var(--accent-gold);
   background: var(--accent-gold-glow);
   color: var(--accent-gold);

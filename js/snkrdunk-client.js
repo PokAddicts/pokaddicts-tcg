@@ -92,6 +92,26 @@ class SnkrDunkClient {
       return 0;
     }).map(c => ({ label: c.condition, price: c.priceSgd, source: 'SnkrDunk', graded: !isRaw(c.condition) }));
   }
+
+  // Combines SnkrDunk's own "All" price with the individual condition
+  // breakdown, filtered to just raw or just graded depending on what's
+  // being added. "All" always shows first regardless of that filter,
+  // matching SnkrDunk's own UI (their "All" chip isn't scoped to either
+  // raw or graded) - it's the cheapest active listing across EVERY
+  // condition combined, confirmed directly against a real card on their
+  // site (their "All" chip showed exactly this number, verified across 3
+  // different cards to be nothing more than the minimum of that card's
+  // own individual condition prices - so it's computed here rather than
+  // needing its own separate API call or cache column). It's also the
+  // most accurate "current market price" figure since it reflects the
+  // single lowest active listing, not an average - always shown/used as
+  // the primary SnkrDunk price.
+  buildDisplayList(conditions, wantGraded) {
+    const filtered = conditions.filter(c => c.graded === wantGraded);
+    const allPrice = conditions.length > 0 ? Math.min(...conditions.map(c => c.price)) : 0;
+    const all = allPrice > 0 ? [{ label: 'All', price: allPrice, source: 'SnkrDunk' }] : [];
+    return [...all, ...filtered];
+  }
 }
 
 window.snkrDunkClient = new SnkrDunkClient();

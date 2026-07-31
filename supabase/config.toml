@@ -447,3 +447,9 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/snkrdunk-proxy/deno.json"
 entrypoint = "./functions/snkrdunk-proxy/index.ts"
+
+[functions.refresh-snkrdunk-prices]
+enabled = true
+verify_jwt = false
+import_map = "./functions/refresh-snkrdunk-prices/deno.json"
+entrypoint = "./functions/refresh-snkrdunk-prices/index.ts"

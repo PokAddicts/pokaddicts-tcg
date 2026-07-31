@@ -279,6 +279,17 @@ class CardSearchUI {
   // while this resolves.
   async fetchAllPricesForCard(cardId, cardLang, name, number) {
     if (cardLang === 'ja') {
+      const wantGraded = this.isGradedSlab();
+
+      // Instant read path: refresh-snkrdunk-prices caches every Japanese
+      // card's condition breakdown on a ~3-6h cycle (see
+      // supabase/schema.sql) - a fresh cached array here skips the live
+      // search+price-lookup round trip entirely. 12h freshness window
+      // matches the cron's own target cycle time.
+      const cachedCard = window.cardCatalog.getCardById(cardId);
+      const snkrDunkFresh = cachedCard?.snkrdunkUpdatedAt && cachedCard.snkrdunkConditions?.length > 0
+        && (Date.now() - new Date(cachedCard.snkrdunkUpdatedAt).getTime()) < 12 * 60 * 60 * 1000;
+
       // PokeWallet (finish-based: Normal/Holo/etc.) and SnkrDunk
       // (condition/grade-based: raw A/B/D, PSA 9/10, etc. - SnkrDunk deals
       // in graded cards too) fetched at the same time, not one after the
@@ -298,16 +309,21 @@ class CardSearchUI {
           }
         })(),
         (async () => {
+          // "All" (SnkrDunk's own cheapest-across-every-condition figure -
+          // confirmed directly against their site) always leads, followed
+          // by the individual conditions filtered to just raw or just
+          // graded - a raw card intake showing PSA 10 prices (or vice
+          // versa) would be actively misleading.
+          if (snkrDunkFresh) {
+            return window.snkrDunkClient.buildDisplayList(cachedCard.snkrdunkConditions, wantGraded);
+          }
           if (!window.snkrDunkClient?.configured) return [];
           try {
             const match = await window.snkrDunkClient.findCardByNameAndNumber(name, number);
             if (!match) return [];
             const conditions = await window.snkrDunkClient.getConditionPrices(match.id);
-            const wantGraded = this.isGradedSlab();
-            // Only one set makes sense at a time - a raw card intake
-            // showing PSA 10 prices (or a graded-slab intake showing raw
-            // "A" condition prices) would be actively misleading.
-            return window.snkrDunkClient.extractConditionPricesSGD(conditions).filter(c => c.graded === wantGraded);
+            const conditionPrices = window.snkrDunkClient.extractConditionPricesSGD(conditions);
+            return window.snkrDunkClient.buildDisplayList(conditionPrices, wantGraded);
           } catch (err) {
             console.warn('SnkrDunk price fetch failed:', err);
             return [];
@@ -315,7 +331,12 @@ class CardSearchUI {
         })(),
       ]);
 
-      const combined = [...pokeWalletPrices, ...snkrDunkPrices];
+      // SnkrDunk first so its "All" entry (the overall cheapest listing
+      // across every condition - the most accurate current-market figure,
+      // not an average) leads and becomes the default-selected finish,
+      // with PokeWallet's finish-based variants (Normal/Holo/etc.)
+      // available right after.
+      const combined = [...snkrDunkPrices, ...pokeWalletPrices];
       if (combined.length > 0) return combined;
     }
 

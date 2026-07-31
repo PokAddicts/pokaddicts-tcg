@@ -89,7 +89,12 @@ function catalogCardFromRow(r) {
     id: r.id, name: r.name, set: r.set_name || '', setId: r.set_id || '', number: r.card_number || '',
     language: r.language || '', image: r.image || '', lowQuality: !!r.low_quality,
     marketValueSgd: r.market_value_sgd ?? null, priceSource: r.price_source || null, priceUpdatedAt: r.price_updated_at || null,
-    cachedImageUrl: r.cached_image_url ?? null
+    cachedImageUrl: r.cached_image_url ?? null,
+    // Written by refresh-snkrdunk-prices (Japanese cards only, ~3-6h cron
+    // cycle - see supabase/schema.sql) rather than by anything in this
+    // file - see js/card-search-ui.js's fetchAllPricesForCard for how a
+    // fresh cached array here skips the live SnkrDunk search+price race.
+    snkrdunkConditions: r.snkrdunk_conditions || null, snkrdunkUpdatedAt: r.snkrdunk_updated_at || null
   };
 }
 

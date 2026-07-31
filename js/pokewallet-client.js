@@ -26,6 +26,13 @@ class PokeWalletClient {
     if (!this.configured) {
       console.warn('Supabase is not configured - PokeWallet pricing fallback is disabled until js/supabase-client.js has a real project URL.');
     }
+    // "name|number" -> in-flight/resolved match Promise. The price fetch
+    // and the image fetch for the same card both independently need this
+    // same search, and were previously firing it twice in parallel - this
+    // makes the second caller await the SAME request instead of starting
+    // its own, cutting the network round trips (and the perceived wait
+    // for price/image to show up) roughly in half.
+    this._matchCache = new Map();
   }
 
   authHeaders() {
@@ -135,23 +142,32 @@ class PokeWalletClient {
     }));
   }
 
-  // Convenience: search by name+number, pick the closest match by number,
-  // and fetch its full pricing in one call - used as the Japanese-card
-  // pricing path in scanner.js/card-search-ui.js/card-catalog.js.
+  // Convenience: search by name+number, pick the closest match by number.
+  // Used as the Japanese-card pricing/image path in scanner.js/
+  // card-search-ui.js/card-catalog.js. Shares one in-flight request across
+  // concurrent callers asking about the same card (see this._matchCache).
   async findCardByNameAndNumber(name, number) {
     if (!this.configured) return null;
     const query = [name, number].filter(Boolean).join(' ').trim();
     if (!query) return null;
 
-    const res = await this.searchCards(query, { limit: 10 });
-    const results = res.results || [];
-    if (results.length === 0) return null;
+    const cacheKey = query.toLowerCase();
+    if (this._matchCache.has(cacheKey)) return this._matchCache.get(cacheKey);
 
-    if (number) {
-      const exact = results.find(r => (r.card_info?.card_number || '').startsWith(number));
-      if (exact) return exact;
-    }
-    return results[0];
+    const matchPromise = (async () => {
+      const res = await this.searchCards(query, { limit: 10 });
+      const results = res.results || [];
+      if (results.length === 0) return null;
+
+      if (number) {
+        const exact = results.find(r => (r.card_info?.card_number || '').startsWith(number));
+        if (exact) return exact;
+      }
+      return results[0];
+    })();
+
+    this._matchCache.set(cacheKey, matchPromise);
+    return matchPromise;
   }
 }
 

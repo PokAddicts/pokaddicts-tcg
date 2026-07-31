@@ -107,7 +107,16 @@ class InventoryComponent {
     const showBinderGroups = this.currentFilter === 'all' && this.currentStatus === 'in_stock' && !this.searchQuery;
     const binderGroups = showBinderGroups ? window.db.getBinderMetrics() : [];
 
-    this.loadItemImages(flatItems);
+    // Deferred to a macrotask (not called directly) - this function's
+    // return value is a string the CALLER still has to assign to the DOM
+    // (e.g. container.innerHTML = this.renderItemListInner()), which
+    // hasn't happened yet at this point. A cached image resolves with no
+    // network delay, so its DOM update would otherwise run synchronously
+    // right here and query for elements that don't exist in the page yet
+    // - silently finding nothing and never showing the cached picture
+    // until the next full re-render (which is exactly why it looked like
+    // it "reset" whenever you switched tabs and came back).
+    setTimeout(() => this.loadItemImages(flatItems), 0);
 
     return `
       ${binderGroups.map(b => this.renderBinderGroupCard(b)).join('')}
@@ -177,7 +186,8 @@ class InventoryComponent {
     const totalCost = items.reduce((sum, i) => sum + i.costBasis * (i.quantity || 1), 0);
     const totalValue = items.reduce((sum, i) => sum + i.marketValue * (i.quantity || 1), 0);
 
-    this.loadItemImages(items);
+    // Deferred - see the matching comment in renderItemListInner() for why.
+    setTimeout(() => this.loadItemImages(items), 0);
 
     return `
       <div class="panel-header" style="margin-bottom: 12px;">

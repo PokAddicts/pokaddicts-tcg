@@ -191,6 +191,24 @@ class CardSearchUI {
   // normally in testing. Falls back to TCGdex for a Japanese card if
   // PokeWallet doesn't have it either.
   async fetchAllPricesForCard(cardId, cardLang, name, number) {
+    // English cards read from a daily-refreshed cache instead of doing a
+    // live lookup on every search, whenever that cache is reasonably
+    // fresh - supabase/functions/refresh-catalog-prices cycles through the
+    // whole English catalog roughly every 12-13 hours (23k cards, 300 per
+    // 10-minute cron tick), so anything refreshed within the last 24
+    // hours is trustworthy and instant to read back, no network call at
+    // all. Falls through to a live lookup if the cache is stale, missing,
+    // or came back with no price found.
+    if (cardLang === 'en') {
+      const cachedCard = window.cardCatalog.getCardById(cardId);
+      if (cachedCard?.priceUpdatedAt && cachedCard.marketValueSgd > 0) {
+        const ageMs = Date.now() - new Date(cachedCard.priceUpdatedAt).getTime();
+        if (ageMs < 24 * 60 * 60 * 1000) {
+          return [{ price: cachedCard.marketValueSgd, source: cachedCard.priceSource || '' }];
+        }
+      }
+    }
+
     if (cardLang === 'ja' && window.pokeWalletClient?.configured) {
       try {
         const match = await window.pokeWalletClient.findCardByNameAndNumber(name, number);

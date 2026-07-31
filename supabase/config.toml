@@ -429,3 +429,9 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/pokewallet-proxy/deno.json"
 entrypoint = "./functions/pokewallet-proxy/index.ts"
+
+[functions.refresh-catalog-prices]
+enabled = true
+verify_jwt = false
+import_map = "./functions/refresh-catalog-prices/deno.json"
+entrypoint = "./functions/refresh-catalog-prices/index.ts"

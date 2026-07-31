@@ -174,13 +174,24 @@ create table if not exists cards (
   language text,
   image text, -- TCGdex base image URL (append /low.webp or /high.png etc. - see js/tcgdex-client.js)
   low_quality boolean not null default false, -- flagged once a device confirms this entry has neither an image nor a price - sinks to the bottom of search instead of cluttering results
+  market_value_sgd numeric, -- cached SGD price, refreshed daily by the refresh-catalog-prices Edge Function (English cards only - Japanese pricing stays live via PokeWallet, see js/pokewallet-client.js)
+  price_source text, -- e.g. "TCGPlayer (USD->SGD)" - same display label used elsewhere
+  price_updated_at timestamptz, -- null = never refreshed yet; search falls back to a live lookup if this is missing or stale
   created_at timestamptz not null default now()
 );
 create index if not exists cards_name_idx on cards(name);
+create index if not exists cards_price_refresh_idx on cards(language, price_updated_at); -- lets the refresh job cheaply find the oldest-refreshed English cards
 
 -- If you already ran this schema before the TCGdex migration, run just
 -- this against your existing database instead:
 -- alter table cards add column if not exists image text;
+
+-- If you already ran this schema before daily catalog price caching was
+-- added, run just this against your existing database instead:
+-- alter table cards add column if not exists market_value_sgd numeric;
+-- alter table cards add column if not exists price_source text;
+-- alter table cards add column if not exists price_updated_at timestamptz;
+-- create index if not exists cards_price_refresh_idx on cards(language, price_updated_at);
 
 -- Single shared row tracking the bulk-import job's progress (which set/
 -- page it's up to), so if multiple phones have the app open, they resume

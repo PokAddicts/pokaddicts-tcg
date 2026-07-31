@@ -73,8 +73,17 @@ function cardRowFromCatalogCard(c) {
   return { id: c.id, name: c.name, set_name: c.set, set_id: c.setId, card_number: c.number, language: c.language, image: c.image || '', low_quality: !!c.lowQuality };
 }
 
+// market_value_sgd/price_source/price_updated_at are written by the
+// refresh-catalog-prices Edge Function (English cards only, on a cron
+// schedule - see supabase/schema.sql) rather than by anything in this
+// file, but need to flow through here so search can use them instead of
+// always doing a live lookup.
 function catalogCardFromRow(r) {
-  return { id: r.id, name: r.name, set: r.set_name || '', setId: r.set_id || '', number: r.card_number || '', language: r.language || '', image: r.image || '', lowQuality: !!r.low_quality };
+  return {
+    id: r.id, name: r.name, set: r.set_name || '', setId: r.set_id || '', number: r.card_number || '',
+    language: r.language || '', image: r.image || '', lowQuality: !!r.low_quality,
+    marketValueSgd: r.market_value_sgd ?? null, priceSource: r.price_source || null, priceUpdatedAt: r.price_updated_at || null
+  };
 }
 
 class CardCatalog {

@@ -931,7 +931,6 @@ class PokAddictsScanner {
         marketValue: entry.marketValue || 0,
         askingPrice: entry.marketValue || 0,
         catalogCardId: entry.catalogCardId || '',
-        intakeSource: 'buyback',
         eventTag,
         notes: 'Bought back via Quick Scan'
       });

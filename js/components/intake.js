@@ -9,8 +9,11 @@ class IntakeComponent {
     this.rawMultipleMode = null; // 'normal' | 'binder' (only used for multiple+raw)
     this.multiItemsSavedCount = 0;
     this.lastIntakeSetName = '';
-    this.intakeSource = 'normal'; // 'normal' | 'buyback' - buyback means cash paid to reacquire a card from a customer at a tradeshow
-    this.intakeBuybackEventTag = '';
+    // Every intake can optionally be tagged to a tradeshow/event - lets
+    // you see "bought this at X" later in Analytics, without needing a
+    // separate "Buyback" intake type (retired - it was functionally
+    // identical to normal intake, just with an event tag attached).
+    this.intakeEventTag = '';
     this.selectedSealedProductType = null;
     this.pendingSealedCost = '';
     this.pendingSealedMarket = '';
@@ -80,54 +83,34 @@ class IntakeComponent {
     );
   }
 
-  // Normal Intake vs Buyback toggle, shared by the standard and sealed
-  // forms. Toggling swaps visibility via direct DOM updates rather than a
-  // full renderIntakePage() re-render, so it doesn't wipe out whatever the
-  // user has already typed into the rest of the form.
-  renderIntakeSourceToggle() {
+  // Optional event tag, shared by the standard and sealed forms - lets
+  // any intake (not just a special "buyback" type, which was retired) be
+  // tagged to a tradeshow, so Analytics can show what was bought there.
+  // Defaults to "Normal Sale" (the established no-op/untagged bucket used
+  // elsewhere in this app) or whatever event is currently active app-wide.
+  renderIntakeEventTagField() {
     return `
       <div class="form-group">
-        <label class="form-label">Intake Type</label>
-        <div class="preset-grid" style="grid-template-columns: 1fr 1fr;">
-          <div class="preset-card ${this.intakeSource === 'normal' ? 'selected' : ''}" id="intake-source-normal" style="padding: 10px; text-align: center;" onclick="window.intakeComp.setIntakeSource('normal')">
-            <div class="preset-title" style="font-size: 0.82rem;">📥 Normal Intake</div>
-          </div>
-          <div class="preset-card ${this.intakeSource === 'buyback' ? 'selected' : ''}" id="intake-source-buyback" style="padding: 10px; text-align: center;" onclick="window.intakeComp.setIntakeSource('buyback')">
-            <div class="preset-title" style="font-size: 0.82rem;">🔄 Buyback</div>
-          </div>
-        </div>
-      </div>
-      <div id="intake-buyback-event-section" class="form-group" style="display: ${this.intakeSource === 'buyback' ? 'block' : 'none'};">
-        <label class="form-label">Tradeshow / Event</label>
+        <label class="form-label">Tradeshow / Event (optional)</label>
         <div style="display: flex; gap: 8px;">
-          <select id="intake-buyback-event" class="form-control">
-            ${window.db.getEventTags().map(tag => `<option value="${tag}" ${tag === (this.intakeBuybackEventTag || window.db.settings.currentEventTag || 'Normal Sale') ? 'selected' : ''}>${tag}</option>`).join('')}
+          <select id="intake-event-tag" class="form-control">
+            ${window.db.getEventTags().map(tag => `<option value="${tag}" ${tag === (this.intakeEventTag || window.db.settings.currentEventTag || 'Normal Sale') ? 'selected' : ''}>${tag}</option>`).join('')}
           </select>
-          <button type="button" class="btn btn-cyan btn-sm" onclick="window.intakeComp.openCreateEventModalForBuyback()">+ New</button>
+          <button type="button" class="btn btn-cyan btn-sm" onclick="window.intakeComp.openCreateEventModalForIntake()">+ New</button>
         </div>
-        <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 4px;">Which show you bought this back at - lets you see buyback spend per tradeshow in Analytics.</div>
+        <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 4px;">Tag this as bought at a specific tradeshow to see it in that event's Analytics - leave as "Normal Sale" otherwise.</div>
       </div>
     `;
   }
 
-  setIntakeSource(source) {
-    this.intakeSource = source;
-
-    document.getElementById('intake-source-normal')?.classList.toggle('selected', source === 'normal');
-    document.getElementById('intake-source-buyback')?.classList.toggle('selected', source === 'buyback');
-
-    const eventSection = document.getElementById('intake-buyback-event-section');
-    if (eventSection) eventSection.style.display = source === 'buyback' ? 'block' : 'none';
-  }
-
-  openCreateEventModalForBuyback() {
+  openCreateEventModalForIntake() {
     window.app.openCreateEventModal((evt) => {
-      const select = document.getElementById('intake-buyback-event');
+      const select = document.getElementById('intake-event-tag');
       if (select) {
         select.innerHTML = window.db.getEventTags().map(tag => `<option value="${tag}">${tag}</option>`).join('');
         select.value = evt.name;
       }
-      this.intakeBuybackEventTag = evt.name;
+      this.intakeEventTag = evt.name;
     });
   }
 
@@ -262,8 +245,7 @@ class IntakeComponent {
     this.pendingSealedMarket = '';
     this.pendingSealedSelling = '';
     this.pendingSealedQty = '';
-    this.intakeSource = 'normal';
-    this.intakeBuybackEventTag = '';
+    this.intakeEventTag = '';
     this.selectedCatalogCardId = null;
     this.selectedTierBinderName = '';
     this.selectedTierId = '';
@@ -291,8 +273,7 @@ class IntakeComponent {
     this.pendingSealedMarket = '';
     this.pendingSealedSelling = '';
     this.pendingSealedQty = '';
-    this.intakeSource = 'normal';
-    this.intakeBuybackEventTag = '';
+    this.intakeEventTag = '';
     this.selectedCatalogCardId = null;
     this.selectedTierBinderName = '';
     this.selectedTierId = '';
@@ -350,7 +331,7 @@ class IntakeComponent {
 
       <div class="card-panel">
         <form id="single-intake-form" onsubmit="window.intakeComp.handleStandardItemSubmit(event)">
-          ${this.renderIntakeSourceToggle()}
+          ${this.renderIntakeEventTagField()}
 
           ${window.cardCatalog.renderStatusLineHTML()}
           <div class="form-group card-search-wrap">
@@ -456,8 +437,8 @@ class IntakeComponent {
     const sellingPrice = parseFloat(document.getElementById('intake-selling-price').value) || market;
     const binderSelect = document.getElementById('intake-binder-select');
     const binderName = binderSelect ? binderSelect.value : '';
-    const buybackEventSelect = document.getElementById('intake-buyback-event');
-    if (this.intakeSource === 'buyback' && buybackEventSelect) this.intakeBuybackEventTag = buybackEventSelect.value;
+    const eventTagSelect = document.getElementById('intake-event-tag');
+    if (eventTagSelect) this.intakeEventTag = eventTagSelect.value;
 
     let gradingCompany, grade, condition, cert;
     if (type === 'slab') {
@@ -475,13 +456,12 @@ class IntakeComponent {
     const newItem = window.db.addItem({
       name, set, type, grade, gradingCompany, condition, certNumber: cert, costBasis: cost, marketValue: market, askingPrice: sellingPrice, binderName,
       catalogCardId: this.selectedCatalogCardId || '',
-      intakeSource: this.intakeSource,
-      eventTag: this.intakeBuybackEventTag
+      eventTag: this.intakeEventTag
     });
 
     window.syncManager.broadcast('ITEM_ADDED', newItem);
-    window.app.showToast(this.intakeSource === 'buyback'
-      ? `Bought back ${name} ($${cost.toFixed(2)}) @ ${newItem.eventTag}`
+    window.app.showToast(newItem.eventTag && newItem.eventTag !== 'Normal Sale'
+      ? `Added ${name} ($${cost.toFixed(2)}) @ ${newItem.eventTag}`
       : `Added ${name} ($${cost.toFixed(2)})`);
     window.app.renderAllPages();
     this.lastIntakeSetName = set;
@@ -518,7 +498,7 @@ class IntakeComponent {
       ${this.renderSessionCounterBanner()}
 
       <div class="card-panel">
-        ${this.renderIntakeSourceToggle()}
+        ${this.renderIntakeEventTagField()}
 
         <div class="form-group">
           <label class="form-label">Set Name</label>
@@ -578,13 +558,13 @@ class IntakeComponent {
     const marketVal = document.getElementById('sealed-market-input')?.value;
     const sellingVal = document.getElementById('sealed-selling-input')?.value;
     const qtyVal = document.getElementById('sealed-qty-input')?.value;
-    const buybackEventVal = document.getElementById('intake-buyback-event')?.value;
+    const eventTagVal = document.getElementById('intake-event-tag')?.value;
     if (setVal !== undefined) this.lastIntakeSetName = setVal;
     if (costVal) this.pendingSealedCost = costVal;
     if (marketVal) this.pendingSealedMarket = marketVal;
     if (sellingVal) this.pendingSealedSelling = sellingVal;
     if (qtyVal) this.pendingSealedQty = qtyVal;
-    if (this.intakeSource === 'buyback' && buybackEventVal) this.intakeBuybackEventTag = buybackEventVal;
+    if (eventTagVal) this.intakeEventTag = eventTagVal;
 
     this.selectedSealedProductType = productType;
     this.renderIntakePage();
@@ -599,8 +579,8 @@ class IntakeComponent {
     const market = parseFloat(document.getElementById('sealed-market-input').value) || cost;
     const sellingPrice = parseFloat(document.getElementById('sealed-selling-input').value) || market;
     const qty = parseInt(document.getElementById('sealed-qty-input').value, 10) || 1;
-    const buybackEventSelect = document.getElementById('intake-buyback-event');
-    if (this.intakeSource === 'buyback' && buybackEventSelect) this.intakeBuybackEventTag = buybackEventSelect.value;
+    const eventTagSelect = document.getElementById('intake-event-tag');
+    if (eventTagSelect) this.intakeEventTag = eventTagSelect.value;
     const productType = this.selectedSealedProductType;
     const name = setName ? `${setName} - ${productType}` : productType;
 
@@ -614,13 +594,12 @@ class IntakeComponent {
       marketValue: market,
       askingPrice: sellingPrice,
       quantity: qty,
-      intakeSource: this.intakeSource,
-      eventTag: this.intakeBuybackEventTag
+      eventTag: this.intakeEventTag
     });
 
     window.syncManager.broadcast('ITEM_ADDED', newItem);
-    window.app.showToast(this.intakeSource === 'buyback'
-      ? `Bought back ${qty > 1 ? `${qty}x ` : ''}${name} ($${cost.toFixed(2)}${qty > 1 ? '/ea' : ''}) @ ${newItem.eventTag}`
+    window.app.showToast(newItem.eventTag && newItem.eventTag !== 'Normal Sale'
+      ? `Added ${qty > 1 ? `${qty}x ` : ''}${name} ($${cost.toFixed(2)}${qty > 1 ? '/ea' : ''}) @ ${newItem.eventTag}`
       : `Added ${qty > 1 ? `${qty}x ` : ''}${name} ($${cost.toFixed(2)}${qty > 1 ? '/ea' : ''})`);
     window.app.renderAllPages();
 
@@ -666,7 +645,7 @@ class IntakeComponent {
           Add straight into an existing price tier (just a quantity), or create a new one - e.g. "$1-$5" x 80 cards.
         </p>
 
-        ${this.renderIntakeSourceToggle()}
+        ${this.renderIntakeEventTagField()}
 
         <div class="form-group">
           <label class="form-label">Binder</label>
@@ -746,8 +725,8 @@ class IntakeComponent {
     const binderName = document.getElementById('binder-select-input')?.value;
     const tierId = document.getElementById('tier-select-input')?.value;
     const qty = parseInt(document.getElementById('tier-qty-input')?.value, 10) || 0;
-    const buybackEventSelect = document.getElementById('intake-buyback-event');
-    if (this.intakeSource === 'buyback' && buybackEventSelect) this.intakeBuybackEventTag = buybackEventSelect.value;
+    const eventTagSelect = document.getElementById('intake-event-tag');
+    if (eventTagSelect) this.intakeEventTag = eventTagSelect.value;
 
     if (!binderName) { alert('Create or select a binder first.'); return; }
     if (qty <= 0) { alert('Enter a quantity to add.'); return; }
@@ -759,13 +738,10 @@ class IntakeComponent {
       const batchCostVal = document.getElementById('existing-tier-cost-input')?.value;
       const batchCost = batchCostVal === '' || batchCostVal === undefined ? undefined : parseFloat(batchCostVal);
 
-      const updated = window.db.restockItem(tierId, qty, batchCost, {
-        intakeSource: this.intakeSource,
-        eventTag: this.intakeBuybackEventTag
-      });
+      window.db.restockItem(tierId, qty, batchCost, { eventTag: this.intakeEventTag });
 
-      window.app.showToast(this.intakeSource === 'buyback'
-        ? `Bought back ${qty} into "${existing.name}" in ${binderName} @ ${updated.eventTag}`
+      window.app.showToast(this.intakeEventTag && this.intakeEventTag !== 'Normal Sale'
+        ? `Added ${qty} into "${existing.name}" in ${binderName} @ ${this.intakeEventTag}`
         : `Added ${qty} more to "${existing.name}" in ${binderName}`);
     } else {
       const label = document.getElementById('new-tier-label-input')?.value.trim();
@@ -783,12 +759,11 @@ class IntakeComponent {
         costBasis: cost,
         marketValue: resale,
         notes: `Binder tier intake: ${binderName}`,
-        intakeSource: this.intakeSource,
-        eventTag: this.intakeBuybackEventTag
+        eventTag: this.intakeEventTag
       });
       this.selectedTierId = newTier.id;
-      window.app.showToast(this.intakeSource === 'buyback'
-        ? `Bought back new tier "${label}" (x${qty}) into ${binderName} @ ${newTier.eventTag}`
+      window.app.showToast(newTier.eventTag && newTier.eventTag !== 'Normal Sale'
+        ? `Added new tier "${label}" (x${qty}) into ${binderName} @ ${newTier.eventTag}`
         : `Added new tier "${label}" (x${qty}) to ${binderName}`);
     }
 

@@ -674,14 +674,18 @@ class PokAddictsDB {
       status: 'in_stock',
       acquiredDate: new Date().toISOString().split('T')[0],
       acquiredBy: this.settings.teamMember,
-      // 'buyback' = cash paid to a customer at a tradeshow to reacquire a
-      // card - the item itself just carries this as informational context
-      // (how it originated); the actual per-tradeshow spend accounting
+      // 'intakeSource' is a leftover column kept only so old synced rows
+      // and the Supabase schema don't need a migration - the "Buyback" vs
+      // "Normal Intake" distinction it used to gate was retired (it was
+      // functionally identical from the user's own workflow), so this is
+      // always 'normal' now. Any intake can carry an event tag instead -
+      // the item itself just carries it as informational context (how/
+      // where it originated); the actual per-tradeshow spend accounting
       // lives in the separate buybacks ledger below, since this row can be
       // restocked/resold repeatedly afterward and would otherwise become
       // an inaccurate running total.
-      intakeSource: item.intakeSource === 'buyback' ? 'buyback' : 'normal',
-      eventTag: item.intakeSource === 'buyback' ? this.resolveEventTag(item.eventTag) : '',
+      intakeSource: 'normal',
+      eventTag: this.resolveEventTag(item.eventTag),
       notes: item.notes || ''
     };
 
@@ -689,7 +693,10 @@ class PokAddictsDB {
     this.cacheLocally();
     this.pushInventoryUpsert(newItem);
 
-    if (newItem.intakeSource === 'buyback') {
+    // Only logged to the ledger if a REAL event was tagged (not the
+    // default "Normal Sale" bucket) - that's what makes it show up as
+    // spend under that tradeshow in Analytics.
+    if (newItem.eventTag && newItem.eventTag !== 'Normal Sale') {
       this.recordBuyback({
         itemId: newItem.id,
         itemName: newItem.name,
@@ -726,10 +733,11 @@ class PokAddictsDB {
   // standard costing approach for fungible/bulk stock where you can't
   // tell which physical unit later sells. addCost is per-unit; if omitted,
   // the existing cost basis is just carried forward unchanged.
-  // Pass { intakeSource: 'buyback', eventTag } when this top-up is a
-  // customer buyback (e.g. adding cards into an existing binder price
-  // tier) so it's logged to the buybacks ledger for tradeshow accounting.
-  restockItem(itemId, addQty, addCost, { intakeSource, eventTag } = {}) {
+  // Pass { eventTag } when this top-up should be tagged to a tradeshow
+  // (e.g. adding cards into an existing binder price tier while at a
+  // show) so it's logged to the buybacks ledger for that event's spend
+  // accounting - omit it (or "Normal Sale") for an untagged restock.
+  restockItem(itemId, addQty, addCost, { eventTag } = {}) {
     const item = this.getItemById(itemId);
     if (!item) return null;
 
@@ -747,13 +755,14 @@ class PokAddictsDB {
       costBasis: parseFloat(blendedCost.toFixed(2))
     });
 
-    if (intakeSource === 'buyback' && updated) {
+    const resolvedEventTag = eventTag ? this.resolveEventTag(eventTag) : '';
+    if (resolvedEventTag && resolvedEventTag !== 'Normal Sale' && updated) {
       this.recordBuyback({
         itemId: updated.id,
         itemName: updated.name,
         quantity: qty,
         costBasis: batchCost,
-        eventTag: this.resolveEventTag(eventTag)
+        eventTag: resolvedEventTag
       });
     }
 

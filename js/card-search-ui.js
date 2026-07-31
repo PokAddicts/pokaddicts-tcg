@@ -190,32 +190,23 @@ class CardSearchUI {
   // to the wrong product). English cards keep using TCGdex, which priced
   // normally in testing. Falls back to TCGdex for a Japanese card if
   // PokeWallet doesn't have it either.
+  // Always does a live lookup and returns EVERY sub-variant (Normal,
+  // Reverse Holofoil, 1st Edition Holofoil, etc.) TCGdex/PokeWallet has
+  // pricing for - a real gap existed here where this only ever returned
+  // ONE number (extractAllMarketPricesSGD, "normal" preferred), silently
+  // hiding every other variant a card had (e.g. Gastly 63/112's reverse
+  // holo, or Blaine's Moltres 1/132's non-1st-edition print). TCGdex has
+  // no rate limit, so there's no real cost to always doing this live -
+  // see selectCard() for the instant provisional price shown from cache
+  // while this resolves.
   async fetchAllPricesForCard(cardId, cardLang, name, number) {
-    // English cards read from a daily-refreshed cache instead of doing a
-    // live lookup on every search, whenever that cache is reasonably
-    // fresh - supabase/functions/refresh-catalog-prices cycles through the
-    // whole English catalog roughly every 12-13 hours (23k cards, 300 per
-    // 10-minute cron tick), so anything refreshed within the last 24
-    // hours is trustworthy and instant to read back, no network call at
-    // all. Falls through to a live lookup if the cache is stale, missing,
-    // or came back with no price found.
-    if (cardLang === 'en') {
-      const cachedCard = window.cardCatalog.getCardById(cardId);
-      if (cachedCard?.priceUpdatedAt && cachedCard.marketValueSgd > 0) {
-        const ageMs = Date.now() - new Date(cachedCard.priceUpdatedAt).getTime();
-        if (ageMs < 24 * 60 * 60 * 1000) {
-          return [{ price: cachedCard.marketValueSgd, source: cachedCard.priceSource || '' }];
-        }
-      }
-    }
-
     if (cardLang === 'ja' && window.pokeWalletClient?.configured) {
       try {
         const match = await window.pokeWalletClient.findCardByNameAndNumber(name, number);
         if (match) {
           const detail = await window.pokeWalletClient.getCard(match.id);
-          const prices = window.pokeWalletClient.extractAllMarketPricesSGD(detail);
-          if (prices.length > 0) return prices;
+          const variants = window.pokeWalletClient.extractAllVariantsSGD(detail);
+          if (variants.length > 0) return variants;
         }
       } catch (err) {
         console.warn('PokeWallet price fetch failed, falling back to TCGdex:', err);
@@ -225,7 +216,7 @@ class CardSearchUI {
     try {
       const detail = await window.tcgdexClient.getCard(cardId, cardLang)
         .catch(() => window.tcgdexClient.getCard(cardId, cardLang === 'ja' ? 'en' : 'ja'));
-      return window.tcgdexClient.extractAllMarketPricesSGD(detail);
+      return window.tcgdexClient.extractAllVariantsSGD(detail);
     } catch (err) {
       console.warn('TCGdex price fetch failed:', err);
       return [];
@@ -297,6 +288,25 @@ class CardSearchUI {
       .catch((err) => console.warn('Card image fetch failed:', err));
 
     const cardLang = card.language || 'en';
+
+    // Instant provisional price from the daily-refreshed cache (English
+    // only - see supabase/functions/refresh-catalog-prices), shown
+    // immediately while the live full-variant fetch below resolves. The
+    // cache only ever stores ONE number, so it can't reflect every
+    // sub-variant a card has - this is just a placeholder to paint
+    // something right away, always superseded by the live result a
+    // moment later.
+    if (cardLang === 'en') {
+      const cachedCard = window.cardCatalog.getCardById(cardId);
+      if (cachedCard?.priceUpdatedAt && cachedCard.marketValueSgd > 0) {
+        const ageMs = Date.now() - new Date(cachedCard.priceUpdatedAt).getTime();
+        if (ageMs < 24 * 60 * 60 * 1000) {
+          const priceLine = document.getElementById('card-search-price-line');
+          if (priceLine) priceLine.innerHTML = `<div>S$${cachedCard.marketValueSgd.toFixed(2)} (${this.formatPriceSource(cachedCard.priceSource || '')})</div>`;
+        }
+      }
+    }
+
     const pricePromise = this.fetchAllPricesForCard(cardId, cardLang, displayName, card.number)
       .then((allPrices) => {
         // TCGPlayer (US) and CardMarket (EU) are genuinely different

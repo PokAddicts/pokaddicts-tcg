@@ -294,14 +294,22 @@ class CardSearchUI {
     if (cardLang === 'ja') {
       const wantGraded = this.isGradedSlab();
 
-      // Instant read path: refresh-snkrdunk-prices caches every Japanese
+      // Instant read paths: refresh-snkrdunk-prices caches every Japanese
       // card's condition breakdown on a ~3-6h cycle (see
       // supabase/schema.sql) - a fresh cached array here skips the live
-      // search+price-lookup round trip entirely. 12h freshness window
-      // matches the cron's own target cycle time.
+      // search+price-lookup round trip entirely. PokeWallet has no bulk
+      // cron (its 100/hour rate limit rules that out for the whole
+      // catalog) but gets cached LAZILY the first time any device
+      // actually looks a card up - see cachePokeWalletPricePermanently.
+      // 24h freshness for PokeWallet (matches the English cache's own
+      // window) since there's no reason to re-burn rate-limited requests
+      // more often than that; 12h for SnkrDunk to match its cron's target
+      // cycle time.
       const cachedCard = window.cardCatalog.getCardById(cardId);
       const snkrDunkFresh = cachedCard?.snkrdunkUpdatedAt && cachedCard.snkrdunkConditions?.length > 0
         && (Date.now() - new Date(cachedCard.snkrdunkUpdatedAt).getTime()) < 12 * 60 * 60 * 1000;
+      const pokeWalletFresh = cachedCard?.pokewalletUpdatedAt
+        && (Date.now() - new Date(cachedCard.pokewalletUpdatedAt).getTime()) < 24 * 60 * 60 * 1000;
 
       // PokeWallet (finish-based: Normal/Holo/etc.) and SnkrDunk
       // (condition/grade-based: raw A/B/D, PSA 9/10, etc. - SnkrDunk deals
@@ -310,12 +318,18 @@ class CardSearchUI {
       // for one before starting the other.
       const [pokeWalletPrices, snkrDunkPrices] = await Promise.all([
         (async () => {
+          if (pokeWalletFresh) return cachedCard.pokewalletVariants || [];
           if (!window.pokeWalletClient?.configured) return [];
           try {
             const match = await window.pokeWalletClient.findCardByNameAndNumber(name, number);
             if (!match) return [];
             const detail = await window.pokeWalletClient.getCard(match.id);
-            return window.pokeWalletClient.extractAllVariantsSGD(detail);
+            const variants = window.pokeWalletClient.extractAllVariantsSGD(detail);
+            // Fire-and-forget: cache this result now so the NEXT lookup
+            // of the same card (this device or any other) is instant,
+            // rather than repeating the same live round trip forever.
+            if (variants.length > 0) window.cardCatalog.cachePokeWalletPricePermanently(cardId, variants);
+            return variants;
           } catch (err) {
             console.warn('PokeWallet price fetch failed:', err);
             return [];

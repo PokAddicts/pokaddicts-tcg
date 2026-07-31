@@ -174,9 +174,11 @@ create table if not exists cards (
   language text,
   image text, -- TCGdex base image URL (append /low.webp or /high.png etc. - see js/tcgdex-client.js)
   low_quality boolean not null default false, -- flagged once a device confirms this entry has neither an image nor a price - sinks to the bottom of search instead of cluttering results
-  market_value_sgd numeric, -- cached SGD price, refreshed daily by the refresh-catalog-prices Edge Function (English cards only - Japanese pricing stays live via PokeWallet, see js/pokewallet-client.js)
+  market_value_sgd numeric, -- cached SGD price, refreshed daily by the refresh-catalog-prices Edge Function (English cards only)
   price_source text, -- e.g. "TCGPlayer (USD->SGD)" - same display label used elsewhere
   price_updated_at timestamptz, -- null = never refreshed yet; search falls back to a live lookup if this is missing or stale
+  pokewallet_variants jsonb, -- cached array of {label, price, source} - PokeWallet's TCGPlayer/CardMarket pricing for Japanese cards (see js/pokewallet-client.js), populated LAZILY on first live lookup (not a bulk cron - PokeWallet's 100/hour rate limit makes bulk-caching the whole ~8,159-card Japanese catalog impractical, see js/card-catalog.js's cachePokeWalletPricePermanently). null = never looked up yet
+  pokewallet_updated_at timestamptz, -- null = never cached yet; a stale/missing value falls back to a live lookup, whose result then gets cached for next time
   cached_image_url text, -- permanent Supabase Storage URL (card-images bucket), populated by the cache-card-images Edge Function. null = not attempted yet; '' = attempted, no image found anywhere (won't be retried); a real URL = instant read, skips the live TCGdex/PokeWallet race entirely. Unlike price, an image never changes once printed, so this is never refreshed/expired.
   snkrdunk_id text, -- SnkrDunk's own trading-card id, resolved once via a name search and cached so later refreshes skip straight to the price lookup (see refresh-snkrdunk-prices). null = not attempted yet; '' = searched, no match found (retried on its next turn in the refresh queue, since unlike images a future listing could still appear)
   snkrdunk_conditions jsonb, -- cached array of {label, price, source, graded} - one entry per individual condition SnkrDunk prices (raw A/B/C/D, or graded PSA/ARS/etc - see js/snkrdunk-client.js), refreshed every ~12h by the refresh-snkrdunk-prices Edge Function (Japanese cards only). SnkrDunk's own "All" price (cheapest listing across every condition, confirmed directly against their site) is just the minimum of these, not a separately cached value - see SnkrDunkClient.buildDisplayList()
@@ -198,6 +200,11 @@ create index if not exists cards_snkrdunk_refresh_idx on cards(language, snkrdun
 -- alter table cards add column if not exists price_source text;
 -- alter table cards add column if not exists price_updated_at timestamptz;
 -- create index if not exists cards_price_refresh_idx on cards(language, price_updated_at);
+
+-- If you already ran this schema before PokeWallet price caching was
+-- added, run just this against your existing database instead:
+-- alter table cards add column if not exists pokewallet_variants jsonb;
+-- alter table cards add column if not exists pokewallet_updated_at timestamptz;
 
 -- If you already ran this schema before permanent image caching was added,
 -- run just this against your existing database instead:

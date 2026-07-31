@@ -32,6 +32,19 @@ const CARD_CATALOG_SYNC_STATE_KEY = 'pokaddicts_catalog_sync_state_v3';
 // pulls a whole set's cards in one shot (no pagination needed).
 const SYNC_REQUEST_DELAY_MS = 150;
 
+// Forces a full re-pull of every card row at least this often, even once
+// a device already has the full catalog locally - server-side caches
+// (market_value_sgd, cached_image_url, snkrdunk_conditions, etc.) are
+// written by background cron jobs asynchronously, and the count-based
+// check below (this.cards.length < totalCards) only ever catches
+// genuinely NEW cards, never freshly-cached data on cards a device
+// already has - a real, confirmed gap: a fully-synced device would never
+// see prices/images/SnkrDunk data that appear on already-synced rows
+// after the fact, permanently stuck re-doing a live lookup every time
+// even though the server-side cache was right there.
+const CARD_CATALOG_FULL_RESYNC_KEY = 'pokaddicts_catalog_last_full_sync_v1';
+const FULL_RESYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
 // Builds the printed-style "080/073" number string - the denominator is
 // zero-padded to match the card's own digit width when it came back
 // shorter (e.g. "73" -> "073" alongside localId "080").
@@ -94,7 +107,13 @@ function catalogCardFromRow(r) {
     // cycle - see supabase/schema.sql) rather than by anything in this
     // file - see js/card-search-ui.js's fetchAllPricesForCard for how a
     // fresh cached array here skips the live SnkrDunk search+price race.
-    snkrdunkConditions: r.snkrdunk_conditions || null, snkrdunkUpdatedAt: r.snkrdunk_updated_at || null
+    snkrdunkConditions: r.snkrdunk_conditions || null, snkrdunkUpdatedAt: r.snkrdunk_updated_at || null,
+    // Written LAZILY (this.cachePokeWalletPricePermanently, below) after a
+    // live PokeWallet lookup succeeds - unlike SnkrDunk, there's no bulk
+    // cron for this (PokeWallet's 100/hour rate limit makes bulk-caching
+    // the whole Japanese catalog impractical), so this only ever gets
+    // populated for cards someone has actually searched.
+    pokewalletVariants: r.pokewallet_variants || null, pokewalletUpdatedAt: r.pokewallet_updated_at || null
   };
 }
 
@@ -147,11 +166,15 @@ class CardCatalog {
         };
       }
 
-      if (this.cards.length < this.syncState.totalCards) {
+      const lastFullSync = parseInt(localStorage.getItem(CARD_CATALOG_FULL_RESYNC_KEY) || '0', 10);
+      const dueForResync = Date.now() - lastFullSync > FULL_RESYNC_INTERVAL_MS;
+
+      if (this.cards.length < this.syncState.totalCards || dueForResync) {
         const rows = await this.pullAllCardRows();
         const cards = rows.map(catalogCardFromRow);
         await this.saveCards(cards);
         this.cards = cards;
+        localStorage.setItem(CARD_CATALOG_FULL_RESYNC_KEY, String(Date.now()));
       }
     } catch (err) {
       console.error('Failed to load shared card catalog from Supabase, using local cache:', err);
@@ -640,6 +663,33 @@ class CardCatalog {
       if (card) card.cachedImageUrl = data.publicUrl;
     } catch (err) {
       console.warn('Permanent image cache upload failed:', err);
+    }
+  }
+
+  // Records a live PokeWallet price lookup's result on the card's row, so
+  // every future lookup (this device or any other) hits the instant
+  // cached path in card-search-ui.js's fetchAllPricesForCard instead of
+  // repeating the same live search+detail round trip. Never awaited by
+  // the caller. Lazy (cache-on-first-fetch) rather than a bulk cron like
+  // SnkrDunk's - PokeWallet's 100/hour rate limit makes bulk-caching the
+  // whole Japanese catalog impractical, but caching whatever a real
+  // search actually touches costs nothing extra and is exactly the data
+  // worth having fast for next time.
+  async cachePokeWalletPricePermanently(cardId, variants) {
+    if (!this.remote) return;
+    try {
+      await this.remote.from('cards').update({
+        pokewallet_variants: variants,
+        pokewallet_updated_at: new Date().toISOString()
+      }).eq('id', cardId);
+
+      const card = this.getCardById(cardId);
+      if (card) {
+        card.pokewalletVariants = variants;
+        card.pokewalletUpdatedAt = new Date().toISOString();
+      }
+    } catch (err) {
+      console.warn('Permanent PokeWallet price cache write failed:', err);
     }
   }
 

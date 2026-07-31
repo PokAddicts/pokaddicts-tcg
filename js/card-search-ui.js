@@ -309,19 +309,35 @@ class CardSearchUI {
 
     const pricePromise = this.fetchAllPricesForCard(cardId, cardLang, displayName, card.number)
       .then((allPrices) => {
-        // TCGPlayer (US) and CardMarket (EU) are genuinely different
-        // marketplaces and can diverge quite a bit - show both whenever
-        // available, rather than silently picking one. The stored
-        // marketValue still uses just the first one, since cost/margin
-        // tracking needs a single number.
+        // Multiple sub-variants (Normal, Reverse Holofoil, 1st Edition,
+        // etc.) can have very different market values for the exact same
+        // card/set/number - defaults to the first one (same as before),
+        // but each is shown as its own clickable chip so the actual
+        // physical copy's finish can be picked, updating the stored
+        // market value to match.
         this.resolvedCard.marketValue = allPrices[0]?.price || 0;
         if (allPrices.length > 0) gotPrice = true;
 
         const priceLine = document.getElementById('card-search-price-line');
         if (priceLine) {
-          priceLine.innerHTML = allPrices.length > 0
-            ? allPrices.map(p => `<div>S$${p.price.toFixed(2)} (${this.formatPriceSource(p.source)})</div>`).join('')
-            : 'No live price found';
+          if (allPrices.length === 0) {
+            priceLine.textContent = 'No live price found';
+          } else {
+            priceLine.innerHTML = allPrices.map((p, i) => `
+              <button type="button" class="price-variant-chip${i === 0 ? ' selected' : ''}" data-index="${i}" title="${this.formatPriceSource(p.source)}">
+                ${p.label ? p.label + ': ' : ''}S$${p.price.toFixed(2)}
+              </button>
+            `).join('');
+            priceLine.querySelectorAll('.price-variant-chip').forEach((chip) => {
+              chip.addEventListener('click', () => {
+                const variant = allPrices[Number(chip.dataset.index)];
+                if (!variant) return;
+                this.resolvedCard.marketValue = variant.price;
+                priceLine.querySelectorAll('.price-variant-chip').forEach((c) => c.classList.remove('selected'));
+                chip.classList.add('selected');
+              });
+            });
+          }
         }
       })
       .catch((err) => {

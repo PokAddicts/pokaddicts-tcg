@@ -764,6 +764,30 @@ select.form-control {
   cursor: pointer;
 }
 
+/* Selectable price-variant chips (Intake's confirm-preview) - one per
+   sub-variant a card has (Normal, Reverse Holofoil, 1st Edition, etc.),
+   clicking one sets it as the stored market value. */
+.price-variant-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  margin: 3px 4px 3px 0;
+  border-radius: var(--border-radius-sm);
+  border: 1.5px solid var(--border-subtle);
+  background: var(--bg-surface-elevated);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.price-variant-chip.selected {
+  border-color: var(--accent-gold);
+  background: var(--accent-gold-glow);
+  color: var(--accent-gold);
+}
+
 /* Card Image Viewer - full-size lightbox, opened by clicking any card
    thumbnail (see js/image-viewer.js). Highest z-index in the app so it
    can be opened from on top of any other modal (e.g. the scanner). */

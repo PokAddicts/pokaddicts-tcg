@@ -323,7 +323,7 @@ class InventoryComponent {
 
     return `
       <div class="item-card item-card-compact" onclick="window.inventoryComp.openItemDetailModal('${item.id}')">
-        ${item.status === 'in_stock' ? `<span class="item-delete-btn" onclick="event.stopPropagation(); window.inventoryComp.deleteItem('${item.id}')">🗑️</span>` : ''}
+        ${item.status === 'in_stock' ? `<span class="item-delete-btn" onclick="event.stopPropagation(); window.inventoryComp.deleteItem('${item.id}')">✕</span>` : ''}
         <div class="item-card-top">
           <div class="item-icon-box" id="item-icon-${item.id}">${icon}</div>
           <div class="item-details">

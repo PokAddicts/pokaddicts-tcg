@@ -39,7 +39,14 @@ const PRICE_URL = "https://snkrdunk.com/en/v1/trading-cards";
 const NUMBER_PATTERN = /\[[A-Za-z0-9.-]+\s+(\d+\/\d+)\]/;
 
 async function search(keyword: string) {
-  const url = `${SEARCH_URL}?keyword=${encodeURIComponent(keyword)}&perPage=21&page=1&type=`;
+  // perPage=100 (not 21) - a common Pokemon name (e.g. "Pikachu") matches
+  // far more than one page of results across every set it's ever
+  // appeared in, and confirmed directly that the correct card can sit
+  // well past the first 21: a real bug caused by this - card-catalog.js's
+  // own matching only looks within whatever this returns, so with a
+  // 21-result page it silently fell back to the wrong card whenever the
+  // real match wasn't on that first page.
+  const url = `${SEARCH_URL}?keyword=${encodeURIComponent(keyword)}&perPage=100&page=1&type=`;
   const res = await fetch(url, { headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0" } });
   if (!res.ok) throw new Error(`SnkrDunk search returned ${res.status}`);
   const data = await res.json();

@@ -53,6 +53,16 @@ class SnkrDunkClient {
   // Convenience: search by name, pick the closest match by card number.
   // Shares one in-flight request across concurrent callers asking about
   // the same card.
+  //
+  // STRICT when a number is given: only an exact number match counts - a
+  // real, confirmed bug used to fall back to results[0] (the single most
+  // "relevant" search hit for the bare name) whenever the real match
+  // wasn't among the results returned. For a common name like "Pikachu"
+  // (which matches dozens of different real cards across many sets),
+  // that silently attached a totally unrelated card's price - one
+  // observed case showed a real ~$270 card as ~$34,000 because it
+  // inherited an ultra-rare graded card's price instead. A wrong price is
+  // worse than no price at all, so this returns null rather than guess.
   async findCardByNameAndNumber(name, number) {
     if (!this.configured || !name) return null;
     const cacheKey = name.toLowerCase();
@@ -63,8 +73,7 @@ class SnkrDunkClient {
       if (results.length === 0) return null;
 
       if (number) {
-        const exact = results.find(r => r.number === number);
-        if (exact) return exact;
+        return results.find(r => r.number === number) || null;
       }
       return results[0];
     })();

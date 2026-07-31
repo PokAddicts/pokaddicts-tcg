@@ -764,6 +764,57 @@ select.form-control {
   cursor: pointer;
 }
 
+/* Card Image Viewer - full-size lightbox, opened by clicking any card
+   thumbnail (see js/image-viewer.js). Highest z-index in the app so it
+   can be opened from on top of any other modal (e.g. the scanner). */
+.image-viewer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.image-viewer-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.image-viewer-img {
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.image-viewer-close {
+  position: fixed;
+  top: max(16px, env(safe-area-inset-top));
+  right: max(16px, env(safe-area-inset-right));
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.image-viewer-close:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
 /* Camera Scanner - full-screen scanning surface */
 #scanner-modal .modal-container.scanner-fullscreen {
   width: 100%;

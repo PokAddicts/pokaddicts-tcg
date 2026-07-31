@@ -288,7 +288,10 @@ class CardSearchUI {
         gotImage = true;
         const imageSlot = document.getElementById('card-search-image-slot');
         if (imageSlot) {
-          imageSlot.innerHTML = `<img src="${imageUrl}" style="width: 60px; border-radius: 8px;" alt="${card.name}">`;
+          imageSlot.innerHTML = `<img src="${imageUrl}" style="width: 60px; border-radius: 8px; cursor: zoom-in;" alt="${card.name}">`;
+          // Listener attached directly (not inline onclick) so the card
+          // name/URL never has to be escaped into an HTML attribute.
+          imageSlot.querySelector('img').addEventListener('click', () => window.openImageViewer(imageUrl, card.name));
         }
       })
       .catch((err) => console.warn('Card image fetch failed:', err));

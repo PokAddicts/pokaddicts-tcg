@@ -31,11 +31,32 @@ import { withSupabase } from "@supabase/server";
 // meant to be called by the cron job (service role key, kept server-side).
 
 const TCGDEX_QUALITY = "low";
-const EN_BATCH_SIZE = 200; // no rate limit on TCGdex, so a large batch clears the whole English catalog in a handful of cron ticks
-const JA_BATCH_SIZE = 25; // candidates considered per run - most already have a free TCGdex image; only cards actually missing one touch the PokeWallet budget below
+const EN_BATCH_SIZE = 1500; // no rate limit on TCGdex, so a large batch (run concurrently, see EN_CONCURRENCY) clears the whole English catalog in just a handful of cron ticks
+const EN_CONCURRENCY = 25; // a plain sequential loop measured ~0.63s/card (126s for 200 cards) - almost all of that is network wait, not CPU, so running many in flight at once multiplies throughput without meaningfully increasing total run time
+const JA_BATCH_SIZE = 60; // candidates considered per run - most already have a free TCGdex image (checked concurrently, see cacheJapaneseBatch), so only a minority actually touch the rate-limited PokeWallet budget below
+const JA_TCGDEX_CONCURRENCY = 20; // for the free TCGdex-image check only - the PokeWallet fallback phase stays strictly sequential so pwRequests can be counted and capped accurately
 const MAX_POKEWALLET_REQUESTS_PER_RUN = 10; // worst case (search + image = 2 requests/card) = 20 PokeWallet calls/run; every 10 min via cron = well under the 100/hour cap, leaving headroom for live user lookups
 const STORAGE_BUCKET = "card-images";
 const POKEWALLET_BASE_URL = "https://api.pokewallet.io";
+
+// Runs fn over items with at most `limit` in flight at once - a plain
+// Promise.all(items.map(fn)) would fire everything at once (fine for a
+// handful of items, but a real problem at batch-size-1500, likely to trip
+// TCGdex's own "be considerate" rate expectations and exhaust outbound
+// connections); a strictly sequential for-loop is correctness-simple but
+// wastes almost all of each card's time on network wait rather than work.
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < items.length) {
+      const current = nextIndex++;
+      results[current] = await fn(items[current]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
 
 async function cacheImage(admin: any, cardId: string, blob: Blob, contentType: string) {
   const ext = contentType.includes("png") ? "png" : contentType.includes("jpeg") ? "jpg" : "webp";
@@ -78,13 +99,13 @@ async function cacheEnglishBatch(admin: any) {
   let cached = 0;
   let failed = 0;
 
-  for (const card of cards || []) {
+  await mapWithConcurrency(cards || [], EN_CONCURRENCY, async (card) => {
     try {
       const found = await tryTcgdexImage(card.image);
       if (!found) {
         await markCard(admin, card.id, ""); // sentinel: attempted, nothing found - don't keep retrying every run
         failed++;
-        continue;
+        return;
       }
       const url = await cacheImage(admin, card.id, found.blob, found.contentType);
       await markCard(admin, card.id, url);
@@ -93,7 +114,7 @@ async function cacheEnglishBatch(admin: any) {
       failed++;
       console.warn(`Failed to cache EN image ${card.id}:`, err);
     }
-  }
+  });
 
   return { candidates: (cards || []).length, cached, failed };
 }
@@ -113,13 +134,39 @@ async function cacheJapaneseBatch(admin: any, pwKey: string | null) {
   let pwRequests = 0;
   let pwBudgetExhausted = false;
 
-  for (const card of cards || []) {
-    try {
-      // Free path first - many Japanese cards already have a TCGdex image,
-      // and trying it costs nothing against the PokeWallet budget.
-      let found = await tryTcgdexImage(card.image);
+  // Phase 1: check TCGdex for all candidates concurrently - free (no rate
+  // limit), and most Japanese cards already have an image there, so this
+  // alone clears the majority of the batch without touching PokeWallet at
+  // all.
+  const tcgdexChecked = await mapWithConcurrency(cards || [], JA_TCGDEX_CONCURRENCY, async (card) => ({
+    card,
+    found: await tryTcgdexImage(card.image),
+  }));
 
-      if (!found && pwKey && !pwBudgetExhausted) {
+  const stillMissing: any[] = [];
+  for (const { card, found } of tcgdexChecked) {
+    if (!found) {
+      stillMissing.push(card);
+      continue;
+    }
+    try {
+      const url = await cacheImage(admin, card.id, found.blob, found.contentType);
+      await markCard(admin, card.id, url);
+      cached++;
+    } catch (err) {
+      failed++;
+      console.warn(`Failed to cache JA image ${card.id}:`, err);
+    }
+  }
+
+  // Phase 2: only cards TCGdex has nothing for fall back to PokeWallet -
+  // strictly sequential (not pooled) so pwRequests can be counted and
+  // capped accurately against the real hourly rate limit.
+  for (const card of stillMissing) {
+    try {
+      let found: { blob: Blob; contentType: string } | null = null;
+
+      if (pwKey && !pwBudgetExhausted) {
         if (pwRequests + 2 > MAX_POKEWALLET_REQUESTS_PER_RUN) {
           pwBudgetExhausted = true; // leave this (and remaining) cards for the next cron tick rather than blow the hourly cap
         } else {

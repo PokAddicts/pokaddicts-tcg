@@ -575,12 +575,51 @@ class CardCatalog {
           if (!settled && url) {
             settled = true;
             resolve(url);
+            // Fire-and-forget: this card just got looked up live (it had
+            // no cached_image_url yet, or getCardImageUrl would have
+            // returned above), so cache it now rather than leaving it for
+            // the background cron to reach in sequential id order (which,
+            // for a ~23,000/~8,000-card catalog, can be hours away). The
+            // cards actually being searched right now are exactly the
+            // ones worth caching first - this is what makes a SECOND
+            // lookup of the same card (from any device) instant, without
+            // waiting on the bulk sweep at all.
+            if (card && size === 'low') this.cacheImagePermanently(card.id, url);
           }
           remaining -= 1;
           if (remaining === 0 && !settled) resolve(null);
         });
       });
     });
+  }
+
+  // Uploads a live-fetched image to the shared card-images Storage bucket
+  // and records its public URL on the card's row, so every future lookup
+  // (this device or any other) hits the instant cached path above instead
+  // of repeating the same TCGdex/PokeWallet race. Never awaited by the
+  // caller - the user already has their image the moment this starts.
+  async cacheImagePermanently(cardId, blobUrl) {
+    if (!this.remote) return;
+    try {
+      const blob = await (await fetch(blobUrl)).blob();
+      const ext = blob.type.includes('png') ? 'png' : blob.type.includes('jpeg') ? 'jpg' : 'webp';
+      const path = `${cardId}.${ext}`;
+
+      const { error: uploadErr } = await this.remote.storage
+        .from('card-images')
+        .upload(path, blob, { contentType: blob.type || 'image/webp', upsert: true });
+      if (uploadErr) throw uploadErr;
+
+      const { data } = this.remote.storage.from('card-images').getPublicUrl(path);
+      await this.remote.from('cards').update({ cached_image_url: data.publicUrl }).eq('id', cardId);
+
+      // Update the in-memory copy too, so this same session's next lookup
+      // of the same card is instant without waiting for a re-sync.
+      const card = this.getCardById(cardId);
+      if (card) card.cachedImageUrl = data.publicUrl;
+    } catch (err) {
+      console.warn('Permanent image cache upload failed:', err);
+    }
   }
 
   // Called after a confirm-step lookup finds neither an image nor a

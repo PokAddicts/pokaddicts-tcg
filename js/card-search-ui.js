@@ -82,35 +82,23 @@ class CardSearchUI {
     return Array.from(groups.values());
   }
 
-  // Renders the two-step finish -> source-price picker into priceLine,
-  // wiring up click handlers that update this.resolvedCard.marketValue as
-  // the user narrows down the exact physical variant. Defaults to the
-  // first finish and its first source (same effective default as before
-  // this picker existed).
+  // Renders the two-step finish picker into priceLine. Clicking a finish
+  // chip (Normal / Reverse Holofoil / etc.) is the only actual choice -
+  // the source price(s) below it are just informational text that swaps
+  // to match, not separately clickable, and this.resolvedCard.marketValue
+  // always follows whichever finish is currently selected (its first/
+  // primary source, same effective default as before this picker
+  // existed).
   renderPriceGroups(priceLine, groups) {
     let selectedGroup = 0;
-    let selectedSource = 0;
 
-    const setMarketValue = () => {
-      this.resolvedCard.marketValue = groups[selectedGroup].entries[selectedSource].price;
-    };
-
-    const renderSources = () => {
-      const sourceRow = priceLine.querySelector('.price-source-row');
+    const renderInfo = () => {
+      const infoRow = priceLine.querySelector('.price-source-row');
       const entries = groups[selectedGroup].entries;
-      sourceRow.innerHTML = entries.map((e, i) => `
-        <button type="button" class="price-source-chip${i === selectedSource ? ' selected' : ''}" data-source="${i}">
-          S$${e.price.toFixed(2)} (${this.formatPriceSource(e.source)})
-        </button>
+      this.resolvedCard.marketValue = entries[0].price;
+      infoRow.innerHTML = entries.map((e) => `
+        <div class="price-source-info">S$${e.price.toFixed(2)} (${this.formatPriceSource(e.source)})</div>
       `).join('');
-      sourceRow.querySelectorAll('.price-source-chip').forEach((chip, i) => {
-        chip.addEventListener('click', () => {
-          selectedSource = i;
-          setMarketValue();
-          sourceRow.querySelectorAll('.price-source-chip').forEach((c) => c.classList.remove('selected'));
-          chip.classList.add('selected');
-        });
-      });
     };
 
     priceLine.innerHTML = `<div class="price-finish-row"></div><div class="price-source-row"></div>`;
@@ -121,16 +109,13 @@ class CardSearchUI {
     finishRow.querySelectorAll('.price-variant-chip').forEach((chip, i) => {
       chip.addEventListener('click', () => {
         selectedGroup = i;
-        selectedSource = 0;
-        setMarketValue();
         finishRow.querySelectorAll('.price-variant-chip').forEach((c) => c.classList.remove('selected'));
         chip.classList.add('selected');
-        renderSources();
+        renderInfo();
       });
     });
 
-    setMarketValue();
-    renderSources();
+    renderInfo();
   }
 
   renderRows(cards) {

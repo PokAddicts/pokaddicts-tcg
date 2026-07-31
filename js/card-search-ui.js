@@ -62,6 +62,14 @@ class CardSearchUI {
     return source;
   }
 
+  // Display label for a card's language - "JP"/"ENG" rather than the raw
+  // "ja"/"en" catalog codes uppercased.
+  formatLanguageLabel(lang) {
+    if (lang === 'ja') return 'JP';
+    if (lang === 'en') return 'ENG';
+    return (lang || '').toUpperCase();
+  }
+
   // Groups a flat variant/price list (extractAllVariantsSGD's shape -
   // {label, price, source}, one entry per marketplace×finish combination)
   // by physical FINISH, so the UI can ask "which finish is this copy?"
@@ -112,40 +120,68 @@ class CardSearchUI {
     return Array.from(groups.values());
   }
 
-  // Renders the two-step finish picker into priceLine. Clicking a finish
-  // chip (Normal / Reverse Holofoil / etc.) is the only actual choice -
-  // the source price(s) below it are just informational text that swaps
-  // to match, not separately clickable, and this.resolvedCard.marketValue
-  // always follows whichever finish is currently selected (its first/
-  // primary source, same effective default as before this picker
-  // existed).
-  renderPriceGroups(priceLine, groups) {
-    let selectedGroup = 0;
+  // Renders the price picker into priceLine as three fixed rows instead
+  // of a single "pick a finish, see its sources below" cascade:
+  //   Row 1: a chip per selectable option - any real named finish
+  //          (Normal / Reverse Holofoil / etc. - only shown when there's
+  //          more than one, i.e. actual ambiguity to resolve) FIRST, then
+  //          SnkrDunk's own conditions (All / A / B / C / etc.) tagged
+  //          "(SnkrDunk)" at the end.
+  //   Row 2: TCG Player's price for whichever finish is selected.
+  //   Row 3: CardMarket's price for whichever finish is selected.
+  // SnkrDunk conditions don't have a matching per-condition TCGPlayer/
+  // CardMarket price (SnkrDunk prices by physical grade, not print
+  // finish), so selecting one only changes this.resolvedCard.marketValue
+  // and which chip is marked selected - rows 2/3 keep showing whichever
+  // finish is currently active.
+  renderPriceGroups(priceLine, allPrices) {
+    const snkrDunkEntries = allPrices.filter(p => p.source === 'SnkrDunk');
+    const marketplaceEntries = allPrices.filter(p => p.source !== 'SnkrDunk');
+    const finishGroups = marketplaceEntries.length > 0 ? this.groupVariantsByFinish(marketplaceEntries) : [];
 
-    const renderInfo = () => {
-      const infoRow = priceLine.querySelector('.price-source-row');
-      const entries = groups[selectedGroup].entries;
-      this.resolvedCard.marketValue = entries[0].price;
-      infoRow.innerHTML = entries.map((e) => `
-        <div class="price-source-info">S$${e.price.toFixed(2)} (${this.formatPriceSource(e.source)})</div>
-      `).join('');
+    const variantChips = finishGroups.length > 1 ? finishGroups.map(g => ({ label: g.label, entries: g.entries })) : [];
+    const snkrDunkChips = snkrDunkEntries.map(e => ({ label: e.label, entries: [{ price: e.price, source: e.source }] }));
+    const chips = [...variantChips, ...snkrDunkChips];
+    const defaultEntries = (finishGroups[0] || { entries: [] }).entries;
+
+    const findEntry = (entries, prefix) => entries.find(e => (e.source || '').startsWith(prefix));
+    priceLine.innerHTML = `
+      <div class="price-finish-row"></div>
+      <div class="price-source-info price-tcgplayer-row"></div>
+      <div class="price-source-info price-cardmarket-row"></div>
+    `;
+    const tcgRow = priceLine.querySelector('.price-tcgplayer-row');
+    const cmRow = priceLine.querySelector('.price-cardmarket-row');
+    const renderReferenceRows = (entries) => {
+      const tcg = findEntry(entries, 'TCGPlayer');
+      const cm = findEntry(entries, 'CardMarket');
+      tcgRow.textContent = tcg ? `TCG Player: S$${tcg.price.toFixed(2)}` : 'TCG Player: -';
+      cmRow.textContent = cm ? `CardMarket: S$${cm.price.toFixed(2)}` : 'CardMarket: -';
     };
 
-    priceLine.innerHTML = `<div class="price-finish-row"></div><div class="price-source-row"></div>`;
+    if (chips.length === 0) {
+      priceLine.querySelector('.price-finish-row').remove();
+      this.resolvedCard.marketValue = defaultEntries[0]?.price || 0;
+      renderReferenceRows(defaultEntries);
+      return;
+    }
+
     const finishRow = priceLine.querySelector('.price-finish-row');
-    finishRow.innerHTML = groups.map((g, i) => `
-      <button type="button" class="price-variant-chip${i === 0 ? ' selected' : ''}" data-finish="${i}">${g.label}</button>
-    `).join('');
-    finishRow.querySelectorAll('.price-variant-chip').forEach((chip, i) => {
-      chip.addEventListener('click', () => {
-        selectedGroup = i;
+    finishRow.innerHTML = chips.map((c, i) => `
+      <button type="button" class="price-variant-chip${i === 0 ? ' selected' : ''}" data-index="${i}">${c.label}</button>
+    `).join('') + (snkrDunkChips.length > 0 ? '<span class="price-source-tag">(SnkrDunk)</span>' : '');
+
+    finishRow.querySelectorAll('.price-variant-chip').forEach((chipEl, i) => {
+      chipEl.addEventListener('click', () => {
         finishRow.querySelectorAll('.price-variant-chip').forEach((c) => c.classList.remove('selected'));
-        chip.classList.add('selected');
-        renderInfo();
+        chipEl.classList.add('selected');
+        this.resolvedCard.marketValue = chips[i].entries[0].price;
+        if (i < variantChips.length) renderReferenceRows(chips[i].entries);
       });
     });
 
-    renderInfo();
+    this.resolvedCard.marketValue = chips[0].entries[0].price;
+    renderReferenceRows(variantChips.length > 0 ? chips[0].entries : defaultEntries);
   }
 
   renderRows(cards) {
@@ -157,7 +193,7 @@ class CardSearchUI {
       return `
       <div class="card-search-row" onclick="window.cardSearchUI.selectCard('${c.id}')">
         <div class="card-search-row-name">${this.formatCardTitle(displayName, c.number)}</div>
-        <div class="card-search-row-meta">${c.set}${c.language ? ' • ' + c.language.toUpperCase() : ''}</div>
+        <div class="card-search-row-meta">${c.set}${c.language ? ' • ' + this.formatLanguageLabel(c.language) : ''}</div>
       </div>
     `;
     }).join('');
@@ -403,7 +439,7 @@ class CardSearchUI {
           <div id="card-search-image-slot" style="width: 60px; flex-shrink: 0;"></div>
           <div style="flex: 1; min-width: 0;">
             <div style="font-weight: 700; color: var(--text-primary);">${this.formatCardTitle(displayName, card.number)}</div>
-            <div style="font-size: 0.75rem; color: var(--text-secondary);">${card.set}${card.language ? ' • ' + card.language.toUpperCase() : ''}</div>
+            <div style="font-size: 0.75rem; color: var(--text-secondary);">${card.set}${card.language ? ' • ' + this.formatLanguageLabel(card.language) : ''}</div>
             <div id="card-search-price-line" style="font-size: 0.82rem; color: var(--accent-gold); font-weight: 700; margin-top: 4px;">Looking up card details...</div>
           </div>
         </div>
@@ -480,11 +516,10 @@ class CardSearchUI {
           return;
         }
 
-        // Pick the FINISH first (Normal / Reverse Holofoil / 1st Edition
-        // Holofoil / etc. - whichever this card actually has), then show
-        // every marketplace's price for that finish below - rather than a
-        // flat list mixing finishes and marketplaces together.
-        this.renderPriceGroups(priceLine, this.groupVariantsByFinish(allPrices));
+        // Finish chips (only when there's more than one real finish) plus
+        // SnkrDunk's own conditions in row 1, TCG Player/CardMarket as
+        // their own fixed reference rows below - see renderPriceGroups.
+        this.renderPriceGroups(priceLine, allPrices);
       })
       .catch((err) => {
         console.error('Live price lookup failed:', err);

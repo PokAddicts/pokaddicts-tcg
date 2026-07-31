@@ -764,22 +764,32 @@ select.form-control {
   cursor: pointer;
 }
 
-/* Two-step price picker (Intake's confirm-preview): .price-finish-row
-   lets you pick the physical FINISH first (Normal / Reverse Holofoil /
-   1st Edition Holofoil / etc. - whichever this card actually has) - the
-   only actual choice here. .price-source-row is plain informational text
-   underneath (not clickable) showing every marketplace's price (TCG
-   Player, CardMarket) for whichever finish is currently selected, and
-   just swaps to match when a different finish chip is picked. */
+/* Price picker (Intake's confirm-preview), three fixed rows:
+   .price-finish-row - chips for any real named finish (Normal / Reverse
+   Holofoil / etc, only when there's more than one) followed by SnkrDunk's
+   own conditions (All / A / B / C / etc, tagged ".price-source-tag" at
+   the end) - the only actual choice here. .price-tcgplayer-row and
+   .price-cardmarket-row are plain informational text underneath (not
+   clickable, both share .price-source-info) showing that marketplace's
+   price for whichever finish is currently selected - SnkrDunk conditions
+   don't have a matching per-finish price, so picking one doesn't change
+   these two rows, only which chip is selected and the stored value. */
 .price-finish-row {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
 }
 
-.price-source-row {
+.price-source-info {
   margin-top: 4px;
   color: var(--text-secondary);
   font-size: 0.78rem;
+}
+
+.price-source-tag {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  margin-left: 2px;
 }
 
 .price-variant-chip {

@@ -7,3 +7,10 @@ supabase key 2.txt
 
 # Local Claude Code settings - not part of the app
 .claude/
+
+# Python bytecode cache (scripts/yuyutei-scraper)
+__pycache__/
+*.pyc
+
+# Local scraper run log/state - regenerated each run, machine-specific
+scripts/yuyutei-scraper/run_log.txt

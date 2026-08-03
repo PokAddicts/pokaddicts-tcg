@@ -170,8 +170,23 @@ def match_and_update(set_id, scraped_cards, fx_rate):
     existing = {row["card_number"]: row for row in res.json()}
     now = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
 
-    updates = []
+    # Some sets (e.g. M2a) list more than one physical print (normal vs.
+    # parallel/1st-edition, etc.) under the SAME printed card_number, but
+    # our own catalog only has ONE row per number - a real, confirmed bug:
+    # sending multiple {id: same_id, ...} entries in one upsert batch made
+    # Postgres reject the whole batch ("ON CONFLICT DO UPDATE command
+    # cannot affect row a second time"). Deduping to the single cheapest
+    # listing per card_number before building the update list fixes this,
+    # and is also the more useful number anyway - the same "cheapest
+    # available" convention SnkrDunk's own "All" price already uses.
+    cheapest_by_number = {}
     for card in scraped_cards:
+        current = cheapest_by_number.get(card["card_number"])
+        if current is None or card["price_jpy"] < current["price_jpy"]:
+            cheapest_by_number[card["card_number"]] = card
+
+    updates = []
+    for card in cheapest_by_number.values():
         row = existing.get(card["card_number"])
         if not row:
             continue

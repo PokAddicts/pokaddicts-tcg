@@ -1,0 +1,797 @@
+[
+  {
+    "yuyuCode": "m05",
+    "setId": "M5",
+    "label": "[M5] 拡張パック アビスアイ",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "m04",
+    "setId": "M4",
+    "label": "[M4] 拡張パック ニンジャスピナー",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "m03",
+    "setId": "M3",
+    "label": "[M3] 拡張パック ムニキスゼロ",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "m02a",
+    "setId": "M2a",
+    "label": "[M2a] ハイクラスパック MEGAドリームex",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "m02",
+    "setId": "M2",
+    "label": "[M2] 拡張パック インフェルノX",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "m01l",
+    "setId": "M1L",
+    "label": "[M1L] 拡張パック メガブレイブ",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "m01s",
+    "setId": "M1S",
+    "label": "[M1S] 拡張パック メガシンフォニア",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv11b",
+    "setId": "SV11B",
+    "label": "[SV11B] 拡張パック ブラックボルト",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv11w",
+    "setId": "SV11W",
+    "label": "[SV11W] 拡張パック ホワイトフレア",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv10",
+    "setId": "SV10",
+    "label": "[SV10] 拡張パック ロケット団の栄光",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv09a",
+    "setId": "SV9a",
+    "label": "[SV9a] 強化拡張パック 熱風のアリーナ",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv09",
+    "setId": "SV9",
+    "label": "[SV9] 拡張パック バトルパートナーズ",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv08a",
+    "setId": "SV8a",
+    "label": "[SV8a] ハイクラスパック テラスタルフェスex",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv08",
+    "setId": "SV8",
+    "label": "[SV8] 拡張パック 超電ブレイカー",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv07a",
+    "setId": "SV7a",
+    "label": "[SV7a] 強化拡張パック 楽園ドラゴーナ",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv07",
+    "setId": "SV7",
+    "label": "[SV7] 拡張パック ステラミラクル",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv06a",
+    "setId": "SV6a",
+    "label": "[SV6a] 強化拡張パック ナイトワンダラー",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv06",
+    "setId": "SV6",
+    "label": "[SV6] 拡張パック 変幻の仮面",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv05a",
+    "setId": "SV5a",
+    "label": "[SV5a] 強化拡張パック クリムゾンヘイズ",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv05k",
+    "setId": "SV5K",
+    "label": "[SV5K] 拡張パック ワイルドフォース",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv05m",
+    "setId": "SV5M",
+    "label": "[SV5M] 拡張パック サイバージャッジ",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv04a",
+    "setId": "SV4a",
+    "label": "[SV4a] ハイクラスパック シャイニートレジャーex",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv04k",
+    "setId": "SV4K",
+    "label": "[SV4K] 拡張パック 古代の咆哮",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv04m",
+    "setId": "SV4M",
+    "label": "[SV4M] 拡張パック 未来の一閃",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv03a",
+    "setId": "SV3a",
+    "label": "[SV3a] 強化拡張パック レイジングサーフ",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv03",
+    "setId": "SV3",
+    "label": "[SV3] 拡張パック 黒炎の支配者",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv02a",
+    "setId": "SV2a",
+    "label": "[SV2a] 強化拡張パック ポケモンカード151",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv02p",
+    "setId": "SV2P",
+    "label": "[SV2P] 拡張パック スノーハザード",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv02d",
+    "setId": "SV2D",
+    "label": "[SV2D] 拡張パック クレイバースト",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv01a",
+    "setId": "SV1a",
+    "label": "[SV1a] 強化拡張パック トリプレットビート",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv01s",
+    "setId": "SV1S",
+    "label": "[SV1S] 拡張パック スカーレットex",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sv01v",
+    "setId": "SV1V",
+    "label": "[SV1V] 拡張パック バイオレットex",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s12a",
+    "setId": "S12a",
+    "label": "[S12a] ハイクラスパック VSTARユニバース",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s12",
+    "setId": "S12",
+    "label": "[S12] 拡張パック パラダイムトリガー",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s11a",
+    "setId": "S11a",
+    "label": "[S11a] 強化拡張パック 白熱のアルカナ",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s11",
+    "setId": "S11",
+    "label": "[S11] 拡張パック ロストアビス",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s10b",
+    "setId": "S10b",
+    "label": "[S10b] 強化拡張パック Pokémon GO",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s10a",
+    "setId": "S10a",
+    "label": "[S10a] 強化拡張パック ダークファンタズマ",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s10d",
+    "setId": "S10D",
+    "label": "[S10D] 拡張パック タイムゲイザー",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s10p",
+    "setId": "S10P",
+    "label": "[S10P] 拡張パック スペースジャグラー",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s09a",
+    "setId": "S9a",
+    "label": "[S9a] 強化拡張パック バトルリージョン",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s09",
+    "setId": "S9",
+    "label": "[S9] 拡張パック スターバース",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s08b",
+    "setId": "S8b",
+    "label": "[S8b] ハイクラスパック VMAXクライマックス",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s08a",
+    "setId": "S8a",
+    "label": "[S8a] 拡張パック 25th ANNIVERSARY COLLECTION",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s08",
+    "setId": "S8",
+    "label": "[S8] 拡張パック フュージョンアーツ",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s07d",
+    "setId": "S7D",
+    "label": "[S7D] 拡張パック 摩天パーフェクト",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s07r",
+    "setId": "S7R",
+    "label": "[S7R] 拡張パック 蒼空ストリーム",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s06a",
+    "setId": "S6a",
+    "label": "[S6a] 強化拡張パック イーブイヒーローズ",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s06h",
+    "setId": "S6H",
+    "label": "[S6H] 拡張パック 白銀のランス",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s06k",
+    "setId": "S6K",
+    "label": "[S6K] 拡張パック 漆黒のガイスト",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s05a",
+    "setId": "S5a",
+    "label": "[S5a] 強化拡張パック 双璧のファイター",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s05i",
+    "setId": "S5I",
+    "label": "[S5I] 拡張パック 一撃マスター",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s05r",
+    "setId": "S5R",
+    "label": "[S5R] 拡張パック 連撃マスター",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s04a",
+    "setId": "S4a",
+    "label": "[S4a] ハイクラスパック シャイニースターV",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s04",
+    "setId": "S4",
+    "label": "[S4] 拡張パック 仰天のボルテッカー",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s03a",
+    "setId": "S3a",
+    "label": "[S3a] 強化拡張パック 伝説の鼓動",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s03",
+    "setId": "S3",
+    "label": "[S3] 拡張パック ムゲンゾーン",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s02a",
+    "setId": "S2a",
+    "label": "[S2a] 強化拡張パック 爆炎ウォーカー",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s02",
+    "setId": "S2",
+    "label": "[S2] 拡張パック 反逆クラッシュ",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s01a",
+    "setId": "S1a",
+    "label": "[S1a] 強化拡張パック VMAXライジング",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s01w",
+    "setId": "S1W",
+    "label": "[S1W] 拡張パック ソード",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "s01h",
+    "setId": "S1H",
+    "label": "[S1H] 拡張パック シールド",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm12a",
+    "setId": "SM12a",
+    "label": "[SM12a] ハイクラスパック TAG TEAM GX タッグオールスターズ",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm12",
+    "setId": "SM12",
+    "label": "[SM12] 拡張パック オルタージェネシス",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm11b",
+    "setId": "SM11b",
+    "label": "[SM11b] 強化拡張パック ドリームリーグ",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm11a",
+    "setId": "SM11a",
+    "label": "[SM11a] 強化拡張パック リミックスバウト",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm11",
+    "setId": "sn11",
+    "label": "[SM11] 拡張パック ミラクルツイン",
+    "method": "title",
+    "title": "ミラクルツイン"
+  },
+  {
+    "yuyuCode": "smp2",
+    "setId": "SMP2",
+    "label": "[SMP2] ムービースペシャルパック 名探偵ピカチュウ",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm10b",
+    "setId": "SM10b",
+    "label": "[SM10b] 強化拡張パック スカイレジェンド",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm10a",
+    "setId": "sn10a",
+    "label": "[SM10a] 強化拡張パック ジージーエンド",
+    "method": "title",
+    "title": "ジージーエンド"
+  },
+  {
+    "yuyuCode": "sm10",
+    "setId": "SM10",
+    "label": "[SM10] 拡張パック ダブルブレイズ",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm09b",
+    "setId": "SM9b",
+    "label": "[SM9b] 強化拡張パック フルメタルウォール",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm09a",
+    "setId": "SM9a",
+    "label": "[SM9a] 強化拡張パック ナイトユニゾン",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm09",
+    "setId": "SM9",
+    "label": "[SM9] 拡張パック タッグボルト",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm08b",
+    "setId": "SM8b",
+    "label": "[SM8b] ハイクラスパック GXウルトラシャイニー",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm08a",
+    "setId": "SM8a",
+    "label": "[SM8a] 強化拡張パック ダークオーダー",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm08",
+    "setId": "SM8",
+    "label": "[SM8] 拡張パック 超爆インパクト",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm07b",
+    "setId": "SM7b",
+    "label": "[SM7b] 強化拡張パック フェアリーライズ",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm07a",
+    "setId": "SM7a",
+    "label": "[SM7a] 強化拡張パック 迅雷スパーク",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm07",
+    "setId": "SM7",
+    "label": "[SM7] 拡張パック 裂空のカリスマ",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm06b",
+    "setId": "SM6b",
+    "label": "[SM6b] 強化拡張パック チャンピオンロード",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm06a",
+    "setId": "SM6a",
+    "label": "[SM6a] 強化拡張パック ドラゴンストーム",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm06",
+    "setId": "SM6",
+    "label": "[SM6] 拡張パック 禁断の光",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm05plus",
+    "setId": "SM5+",
+    "label": "[SM5+] 強化拡張パック ウルトラフォース",
+    "method": "title",
+    "title": "ウルトラフォース"
+  },
+  {
+    "yuyuCode": "sm05s",
+    "setId": "SM5S",
+    "label": "[SM5S] 拡張パック ウルトラサン",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm05m",
+    "setId": "SM5M",
+    "label": "[SM5M] 拡張パック ウルトラムーン",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm04plus",
+    "setId": "SM4+",
+    "label": "[SM4+] ハイクラスパック GXバトルブースト",
+    "method": "title",
+    "title": "GXバトルブースト"
+  },
+  {
+    "yuyuCode": "sm04s",
+    "setId": "SM4S",
+    "label": "[SM4S] 拡張パック 覚醒の勇者",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm04a",
+    "setId": "SM4A",
+    "label": "[SM4A] 拡張パック 超次元の暴獣",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm03plus",
+    "setId": "SM3+",
+    "label": "[SM3+] 強化拡張パック ひかる伝説",
+    "method": "title",
+    "title": "ひかる伝説"
+  },
+  {
+    "yuyuCode": "sm03h",
+    "setId": "SM3H",
+    "label": "[SM3H] 拡張パック 闘う虹を見たか",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm03n",
+    "setId": "SM3N",
+    "label": "[SM3N] 拡張パック 光を喰らう闇",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm02plus",
+    "setId": "sm2+",
+    "label": "[SM2+] 強化拡張パック 新たなる試練の向こう",
+    "method": "title",
+    "title": "新たなる試練の向こう"
+  },
+  {
+    "yuyuCode": "sm02k",
+    "setId": "SM2K",
+    "label": "[SM2K] 拡張パック キミを待つ島々",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm02l",
+    "setId": "SM2L",
+    "label": "[SM2L] 拡張パック アローラの月光",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm01plus",
+    "setId": "SM1+",
+    "label": "[SM1+] 強化拡張パック サン＆ムーン",
+    "method": "title",
+    "title": "サン＆ムーン"
+  },
+  {
+    "yuyuCode": "sm01s",
+    "setId": "SM1S",
+    "label": "[SM1S] コレクション サン",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "sm01m",
+    "setId": "SM1M",
+    "label": "[SM1M] コレクション ムーン",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "xy11ef",
+    "setId": "XY11a",
+    "label": "[XY11] 爆熱の闘士",
+    "method": "title",
+    "title": "爆熱の闘士"
+  },
+  {
+    "yuyuCode": "xy10",
+    "setId": "XY10",
+    "label": "[XY10] めざめる超王",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "xy09",
+    "setId": "XY9",
+    "label": "[XY9] 破天の怒り",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "xy08rf",
+    "setId": "XY8b",
+    "label": "[XY8] 赤い閃光",
+    "method": "title",
+    "title": "赤い閃光"
+  },
+  {
+    "yuyuCode": "xy08bs",
+    "setId": "XY8a",
+    "label": "[XY8] 青い衝撃",
+    "method": "title",
+    "title": "青い衝撃"
+  },
+  {
+    "yuyuCode": "xy07",
+    "setId": "XY7",
+    "label": "[XY7] バンデットリング",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "xy06",
+    "setId": "XY6",
+    "label": "[XY6] エメラルドブレイク",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "xy05gv",
+    "setId": "XY5a",
+    "label": "[XY5] ガイアボルケーノ",
+    "method": "title",
+    "title": "ガイアボルケーノ"
+  },
+  {
+    "yuyuCode": "xy05ts",
+    "setId": "XY5b",
+    "label": "[XY5] タイダルストーム",
+    "method": "title",
+    "title": "タイダルストーム"
+  },
+  {
+    "yuyuCode": "xy04",
+    "setId": "XY4",
+    "label": "[XY4] ファントムゲート",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "xy03",
+    "setId": "XY3",
+    "label": "[XY3] ライジングフィスト",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "xy02",
+    "setId": "XY2",
+    "label": "[XY2] ワイルドブレイズ",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "xy01x",
+    "setId": "XY1a",
+    "label": "[XY1] コレクションX",
+    "method": "title",
+    "title": "コレクションX"
+  },
+  {
+    "yuyuCode": "xy01y",
+    "setId": "XY1b",
+    "label": "[XY1] コレクションY",
+    "method": "title",
+    "title": "コレクションY"
+  },
+  {
+    "yuyuCode": "xycp06",
+    "setId": "CP6",
+    "label": "[CP6] 拡張パック 20th Anniversary",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "xycp05",
+    "setId": "CP5",
+    "label": "[CP5] 幻・伝説ドリームキラコレクション",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "xycp04",
+    "setId": "CP4",
+    "label": "[CP4] プレミアムチャンピオンパック EX×M×BREAK",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "xycp03",
+    "setId": "CP3",
+    "label": "[CP3] ポケキュンコレクション",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "xycp02",
+    "setId": "CP2",
+    "label": "[CP2] 伝説キラコレクション",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "xycp01",
+    "setId": "CP1",
+    "label": "[CP1] マグマ団VSアクア団 ダブルクライシス",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "mc",
+    "setId": "MC",
+    "label": "[MC] スタートデッキ100 バトルコレクション",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "svln",
+    "setId": "SVLN",
+    "label": "[SVLN] スターターセット テラスタイプ：ステラ ニンフィアex",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "svls",
+    "setId": "SVLS",
+    "label": "[SVLS] スターターセット テラスタイプ：ステラ ソウブレイズex",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "si",
+    "setId": "MC",
+    "label": "[SI] スタートデッキ100",
+    "method": "title",
+    "title": "100"
+  },
+  {
+    "yuyuCode": "smd",
+    "setId": "PMCG4",
+    "label": "[SMD] 30枚デッキ対戦セット サトシVSロケット団",
+    "method": "title",
+    "title": "30枚デッキ対戦セット サトシVSロケット団"
+  },
+  {
+    "yuyuCode": "svn",
+    "setId": "SV9",
+    "label": "[SVN] デッキビルドBOX バトルパートナーズ",
+    "method": "title",
+    "title": "バトルパートナーズ"
+  },
+  {
+    "yuyuCode": "svk",
+    "setId": "SVK",
+    "label": "[SVK] デッキビルドBOX ステラミラクル",
+    "method": "bracket"
+  },
+  {
+    "yuyuCode": "svf",
+    "setId": "SV3",
+    "label": "[SVF] デッキビルドBOX 黒炎の支配者",
+    "method": "title",
+    "title": "黒炎の支配者"
+  },
+  {
+    "yuyuCode": "sp4",
+    "setId": "S6a",
+    "label": "[SP4] VMAXスペシャルセット イーブイヒーローズ",
+    "method": "title",
+    "title": "VMAXスペシャルセット イーブイヒーローズ"
+  },
+  {
+    "yuyuCode": "smn",
+    "setId": "SM12a",
+    "label": "[SMN] デッキビルドBOX TAG TEAM GX",
+    "method": "title",
+    "title": "TAG TEAM GX"
+  },
+  {
+    "yuyuCode": "sm00",
+    "setId": "SM0",
+    "label": "[SM00] ピカチュウと新しい仲間たち",
+    "method": "title",
+    "title": "ピカチュウと新しい仲間たち"
+  }
+]

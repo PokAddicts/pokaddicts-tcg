@@ -183,12 +183,15 @@ create table if not exists cards (
   snkrdunk_id text, -- SnkrDunk's own trading-card id, resolved once via a name search and cached so later refreshes skip straight to the price lookup (see refresh-snkrdunk-prices). null = not attempted yet; '' = searched, no match found (retried on its next turn in the refresh queue, since unlike images a future listing could still appear)
   snkrdunk_conditions jsonb, -- cached array of {label, price, source, graded} - one entry per individual condition SnkrDunk prices (raw A/B/C/D, or graded PSA/ARS/etc - see js/snkrdunk-client.js), refreshed every ~12h by the refresh-snkrdunk-prices Edge Function (Japanese cards only). SnkrDunk's own "All" price (cheapest listing across every condition, confirmed directly against their site) is just the minimum of these, not a separately cached value - see SnkrDunkClient.buildDisplayList()
   snkrdunk_updated_at timestamptz, -- null = never refreshed yet; search falls back to a live lookup if this is missing or stale
+  yuyutei_price_sgd numeric, -- Yuyu-tei's own JPY retail sell price, converted to SGD - a real Japanese shop chain's asking price, distinct from SnkrDunk (peer marketplace) and PokeWallet (TCGPlayer/CardMarket aggregate). Written by a LOCAL script (scripts/yuyutei-scraper.py) run on the user's own machine, not a Supabase cron - Yuyu-tei blocks Supabase's Edge Function IP range outright (403), but not residential ISP IPs, so this can only run from a real home connection. null = never scraped yet
+  yuyutei_updated_at timestamptz, -- null = never scraped yet
   created_at timestamptz not null default now()
 );
 create index if not exists cards_name_idx on cards(name);
 create index if not exists cards_price_refresh_idx on cards(language, price_updated_at); -- lets the refresh job cheaply find the oldest-refreshed English cards
 create index if not exists cards_image_cache_idx on cards(language, cached_image_url); -- lets the cache-card-images job cheaply find not-yet-cached cards, split by language (English has no rate limit, Japanese does via PokeWallet)
 create index if not exists cards_snkrdunk_refresh_idx on cards(language, snkrdunk_updated_at); -- lets the SnkrDunk refresh job cheaply find the oldest-refreshed Japanese cards
+create index if not exists cards_yuyutei_idx on cards(language, yuyutei_updated_at); -- lets the local Yuyu-tei scraper cheaply find the oldest-refreshed cards
 
 -- If you already ran this schema before the TCGdex migration, run just
 -- this against your existing database instead:

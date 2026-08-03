@@ -432,23 +432,35 @@ class CardSearchUI {
       // in graded cards too) fetched at the same time, not one after the
       // other - they're independent sources so there's no reason to wait
       // for one before starting the other.
+      // Fallback used whenever a live re-check is attempted (cache older
+      // than the freshness window above) but fails or finds nothing - a
+      // stale cached price is still far more useful than blank, and a
+      // transient failure (PokeWallet's 100/hour cap in particular) is
+      // common enough that silently showing nothing was a real, confirmed
+      // gap: a card priced just yesterday would go blank on any rate-limit
+      // blip today instead of keeping its still-reasonable last price.
+      const stalePokeWalletVariants = cachedCard?.pokewalletVariants || [];
+      const staleSnkrDunkDisplay = cachedCard?.snkrdunkConditions?.length > 0
+        ? window.snkrDunkClient.buildDisplayList(cachedCard.snkrdunkConditions, wantGraded)
+        : [];
+
       const [pokeWalletPrices, snkrDunkPrices] = await Promise.all([
         (async () => {
           if (pokeWalletFresh) return cachedCard.pokewalletVariants || [];
-          if (!window.pokeWalletClient?.configured) return [];
+          if (!window.pokeWalletClient?.configured) return stalePokeWalletVariants;
           try {
             const match = await window.pokeWalletClient.findCardByNameAndNumber(name, number);
-            if (!match) return [];
+            if (!match) return stalePokeWalletVariants;
             const detail = await window.pokeWalletClient.getCard(match.id);
             const variants = window.pokeWalletClient.extractAllVariantsSGD(detail);
             // Fire-and-forget: cache this result now so the NEXT lookup
             // of the same card (this device or any other) is instant,
             // rather than repeating the same live round trip forever.
             if (variants.length > 0) window.cardCatalog.cachePokeWalletPricePermanently(cardId, variants);
-            return variants;
+            return variants.length > 0 ? variants : stalePokeWalletVariants;
           } catch (err) {
             console.warn('PokeWallet price fetch failed:', err);
-            return [];
+            return stalePokeWalletVariants;
           }
         })(),
         (async () => {
@@ -460,16 +472,17 @@ class CardSearchUI {
           if (snkrDunkFresh) {
             return window.snkrDunkClient.buildDisplayList(cachedCard.snkrdunkConditions, wantGraded);
           }
-          if (!window.snkrDunkClient?.configured) return [];
+          if (!window.snkrDunkClient?.configured) return staleSnkrDunkDisplay;
           try {
             const match = await window.snkrDunkClient.findCardByNameAndNumber(name, number);
-            if (!match) return [];
+            if (!match) return staleSnkrDunkDisplay;
             const conditions = await window.snkrDunkClient.getConditionPrices(match.id);
             const conditionPrices = window.snkrDunkClient.extractConditionPricesSGD(conditions);
-            return window.snkrDunkClient.buildDisplayList(conditionPrices, wantGraded);
+            const display = window.snkrDunkClient.buildDisplayList(conditionPrices, wantGraded);
+            return display.length > 0 ? display : staleSnkrDunkDisplay;
           } catch (err) {
             console.warn('SnkrDunk price fetch failed:', err);
-            return [];
+            return staleSnkrDunkDisplay;
           }
         })(),
       ]);

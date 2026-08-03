@@ -145,7 +145,7 @@ def match_and_update(set_id, scraped_cards, fx_rate):
 
     select_url = f"{SUPABASE_URL}/rest/v1/cards"
     params = {
-        "select": "id,card_number",
+        "select": "id,card_number,name",
         "language": "eq.ja",
         "set_id": f"eq.{set_id}",
     }
@@ -159,22 +159,32 @@ def match_and_update(set_id, scraped_cards, fx_rate):
         print(f"  Failed to read existing rows for {set_id}: {res.status_code}")
         return 0
 
-    existing_by_number = {row["card_number"]: row["id"] for row in res.json()}
+    # PostgREST's merge-duplicates upsert still validates the full row
+    # against NOT NULL constraints (like `name`) even though every id here
+    # is confirmed to already exist and this is really just an UPDATE via
+    # ON CONFLICT - a real, confirmed bug: sending only
+    # {id, yuyutei_price_sgd, yuyutei_updated_at} failed on every single
+    # row with "null value in column name violates not-null constraint".
+    # Echoing back the already-known name satisfies that without actually
+    # changing it.
+    existing = {row["card_number"]: row for row in res.json()}
     now = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
 
     updates = []
     for card in scraped_cards:
-        card_id = existing_by_number.get(card["card_number"])
-        if not card_id:
+        row = existing.get(card["card_number"])
+        if not row:
             continue
         updates.append(
             {
-                "id": card_id,
+                "id": row["id"],
+                "name": row["name"],
                 "yuyutei_price_sgd": round(card["price_jpy"] * fx_rate, 4),
                 "yuyutei_updated_at": now,
             }
         )
 
+    print(f"  ({len(existing)} existing rows in our catalog for {set_id}, {len(updates)} matched by card number)")
     return push_updates(updates)
 
 

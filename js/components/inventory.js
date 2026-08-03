@@ -534,7 +534,21 @@ class InventoryComponent {
     const tiers = (card.snkrdunkConditions || []).filter(c => c.graded === wantGraded);
     const tcg = card.pokewalletVariants?.find(v => (v.source || '').startsWith('TCGPlayer'));
     const cm = card.pokewalletVariants?.find(v => (v.source || '').startsWith('CardMarket'));
-    const tail = sourceLine('TCG Player', tcg ? `S$${tcg.price.toFixed(2)}` : null)
+    // Yuyu-tei (a real shop's retail price, cached by a local script - see
+    // scripts/yuyutei-scraper) is a more reliable reference than SnkrDunk
+    // for the bulk of the catalog (confirmed: SnkrDunk's cached "raw
+    // condition" price is frequently 50-100x off for common cards, thin
+    // real listing depth there lets one outlier dominate the "minimum
+    // price"). A SnkrDunk tier that disagrees with it by more than 5x
+    // shows as "No sales data" instead of a misleading number.
+    const yuyuteiPrice = card.yuyuteiPriceSgd || null;
+    const disagreesWithYuyutei = (price) => {
+      if (!yuyuteiPrice || !price) return false;
+      const ratio = price / yuyuteiPrice;
+      return ratio > 5 || ratio < 1 / 5;
+    };
+    const tail = sourceLine('Yuyu-tei', yuyuteiPrice ? `S$${yuyuteiPrice.toFixed(2)}` : null)
+      + sourceLine('TCG Player', tcg ? `S$${tcg.price.toFixed(2)}` : null)
       + sourceLine('CardMarket', cm ? `S$${cm.price.toFixed(2)}` : null)
       + sourceLine('PriceCharting', null, 'Coming soon');
 
@@ -543,6 +557,7 @@ class InventoryComponent {
     }
 
     const rowId = `item-detail-snkrdunk-${item.id}`;
+    const tierText = (t) => disagreesWithYuyutei(t.price) ? 'SNKRDUNK No sales data' : `SNKRDUNK S$${t.price.toFixed(2)}`;
     // Deferred so the chip row exists in the DOM first - this whole
     // string is still being assembled into a template literal the caller
     // hasn't written to innerHTML yet.
@@ -553,15 +568,17 @@ class InventoryComponent {
         chip.addEventListener('click', () => {
           wrap.querySelectorAll('.price-variant-chip').forEach(c => c.classList.remove('selected'));
           chip.classList.add('selected');
-          wrap.querySelector('.price-snkrdunk-value').textContent = `SNKRDUNK S$${tiers[i].price.toFixed(2)}`;
+          const valueEl = wrap.querySelector('.price-snkrdunk-value');
+          valueEl.textContent = tierText(tiers[i]);
+          valueEl.classList.toggle('disabled', disagreesWithYuyutei(tiers[i].price));
         });
       });
     }, 0);
 
     return `
       <div id="${rowId}">
-        <div class="price-tier-chip-row">${tiers.map((t, i) => `<button type="button" class="price-variant-chip${i === 0 ? ' selected' : ''}" data-index="${i}">${t.label}</button>`).join('')}</div>
-        <div class="price-source-info price-snkrdunk-value">SNKRDUNK S$${tiers[0].price.toFixed(2)}</div>
+        <div class="price-tier-chip-row">${tiers.map((t, i) => `<button type="button" class="price-variant-chip${i === 0 ? ' selected' : ''}${disagreesWithYuyutei(t.price) ? ' disabled' : ''}" data-index="${i}">${t.label}</button>`).join('')}</div>
+        <div class="price-source-info price-snkrdunk-value${disagreesWithYuyutei(tiers[0].price) ? ' disabled' : ''}">${tierText(tiers[0])}</div>
       </div>
     ` + tail;
   }

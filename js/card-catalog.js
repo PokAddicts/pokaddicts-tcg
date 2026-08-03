@@ -113,7 +113,19 @@ function catalogCardFromRow(r) {
     // cron for this (PokeWallet's 100/hour rate limit makes bulk-caching
     // the whole Japanese catalog impractical), so this only ever gets
     // populated for cards someone has actually searched.
-    pokewalletVariants: r.pokewallet_variants || null, pokewalletUpdatedAt: r.pokewallet_updated_at || null
+    pokewalletVariants: r.pokewallet_variants || null, pokewalletUpdatedAt: r.pokewallet_updated_at || null,
+    // Written by a LOCAL script (scripts/yuyutei-scraper), not a Supabase
+    // cron - Yuyu-tei blocks Supabase's own IP range outright, so this can
+    // only be refreshed by someone running the scraper from a real
+    // residential connection. A real Japanese shop's retail asking price -
+    // preferred over SnkrDunk's cached price when both exist (see
+    // js/card-search-ui.js's fetchAllPricesForCard): confirmed directly
+    // that SnkrDunk's cached "raw condition" price is frequently wrong by
+    // 50-100x for common/bulk-value cards specifically (thin real listing
+    // depth there lets a single outlier dominate the "minimum price"),
+    // while Yuyu-tei's real shop pricing for the same cards checked out
+    // consistently sane.
+    yuyuteiPriceSgd: r.yuyutei_price_sgd ?? null, yuyuteiUpdatedAt: r.yuyutei_updated_at || null
   };
 }
 

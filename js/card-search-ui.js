@@ -145,22 +145,25 @@ class CardSearchUI {
   // becomes this.resolvedCard.marketValue - clicking any of them clears
   // every other selected state first.
   renderPriceGroups(priceLine, allPrices) {
+    const yuyuteiEntry = allPrices.find(p => p.source === 'Yuyu-tei') || null;
     const snkrDunkEntries = allPrices.filter(p => p.source === 'SnkrDunk');
-    const marketplaceEntries = allPrices.filter(p => p.source !== 'SnkrDunk');
+    const marketplaceEntries = allPrices.filter(p => p.source !== 'SnkrDunk' && p.source !== 'Yuyu-tei');
     const finishGroups = marketplaceEntries.length > 0 ? this.groupVariantsByFinish(marketplaceEntries) : [];
 
     const variantChips = finishGroups.length > 1 ? finishGroups.map(g => ({ label: g.label, entries: g.entries })) : [];
-    const snkrDunkTiers = snkrDunkEntries.map(e => ({ label: e.label, price: e.price }));
+    const snkrDunkTiers = snkrDunkEntries.map(e => ({ label: e.label, price: e.price, noSalesData: !!e.noSalesData }));
     const defaultEntries = (finishGroups[0] || { entries: [] }).entries;
     const findEntry = (entries, prefix) => entries.find(e => (e.source || '').startsWith(prefix));
 
     priceLine.innerHTML = `
+      <div class="price-source-info price-selectable price-yuyutei-row"></div>
       <div class="price-finish-row"></div>
       <div class="price-tier-chip-row"></div>
       <div class="price-source-info price-selectable price-snkrdunk-row"></div>
       <div class="price-source-info price-selectable price-tcgplayer-row"></div>
       <div class="price-source-info price-selectable price-cardmarket-row"></div>
     `;
+    const yuyuteiRow = priceLine.querySelector('.price-yuyutei-row');
     const finishRow = priceLine.querySelector('.price-finish-row');
     const tierChipRow = priceLine.querySelector('.price-tier-chip-row');
     const snkrDunkRow = priceLine.querySelector('.price-snkrdunk-row');
@@ -204,15 +207,26 @@ class CardSearchUI {
     // Selecting a tier highlights BOTH that chip and the SNKRDUNK line
     // together (a linked pair) - clicking the SNKRDUNK line itself (not a
     // specific chip) just re-activates whichever tier was last picked, so
-    // switching to TCG Player/CardMarket and back doesn't lose it.
+    // switching to TCG Player/CardMarket and back doesn't lose it. A tier
+    // flagged noSalesData (disagrees with Yuyu-tei by 5x+ - see
+    // fetchAllPricesForCard) shows as "No sales data" instead of a number
+    // and is never allowed to become the actual market value - a wrong
+    // price is worse than none at all.
     let currentTierIndex = 0;
     const selectTier = (i) => {
       currentTierIndex = i;
-      snkrDunkRow.textContent = `SNKRDUNK S$${snkrDunkTiers[i].price.toFixed(2)}`;
+      const tier = snkrDunkTiers[i];
       clearSelection();
       tierChipRow.children[i].classList.add('selected');
+      if (tier.noSalesData) {
+        snkrDunkRow.textContent = 'SNKRDUNK No sales data';
+        snkrDunkRow.classList.add('disabled');
+        return;
+      }
+      snkrDunkRow.classList.remove('disabled');
+      snkrDunkRow.textContent = `SNKRDUNK S$${tier.price.toFixed(2)}`;
       snkrDunkRow.classList.add('selected');
-      this.resolvedCard.marketValue = snkrDunkTiers[i].price;
+      this.resolvedCard.marketValue = tier.price;
     };
 
     if (snkrDunkTiers.length === 0) {
@@ -220,7 +234,7 @@ class CardSearchUI {
       snkrDunkRow.remove();
     } else {
       tierChipRow.innerHTML = snkrDunkTiers.map((t, i) => `
-        <button type="button" class="price-variant-chip" data-index="${i}">${t.label}</button>
+        <button type="button" class="price-variant-chip${t.noSalesData ? ' disabled' : ''}" data-index="${i}">${t.label}</button>
       `).join('');
       tierChipRow.querySelectorAll('.price-variant-chip').forEach((chipEl, i) => {
         selectables.push(chipEl);
@@ -230,7 +244,7 @@ class CardSearchUI {
       snkrDunkRow.addEventListener('click', () => selectTier(currentTierIndex));
     }
 
-    selectables.push(tcgRow, cmRow);
+    selectables.push(tcgRow, cmRow, yuyuteiRow);
     tcgRow.addEventListener('click', () => {
       const tcg = findEntry(referenceEntries, 'TCGPlayer');
       if (tcg) select(tcgRow, tcg.price);
@@ -239,14 +253,32 @@ class CardSearchUI {
       const cm = findEntry(referenceEntries, 'CardMarket');
       if (cm) select(cmRow, cm.price);
     });
+    yuyuteiRow.textContent = yuyuteiEntry ? `Yuyu-tei S$${yuyuteiEntry.price.toFixed(2)}` : 'Yuyu-tei -';
+    yuyuteiRow.classList.toggle('disabled', !yuyuteiEntry);
+    if (yuyuteiEntry) yuyuteiRow.addEventListener('click', () => select(yuyuteiRow, yuyuteiEntry.price));
 
     refreshReferenceRows();
 
-    // Default selection: a SnkrDunk tier ("All" - the most accurate
-    // current-market figure, the lowest active listing rather than an
-    // average) wins if present, otherwise the first variant finish,
-    // otherwise whichever marketplace price is actually available.
-    if (snkrDunkTiers.length > 0) {
+    // Default selection: Yuyu-tei (a real shop's own retail price) wins
+    // outright when cached - confirmed more reliable than SnkrDunk for
+    // the bulk of the catalog (see fetchAllPricesForCard). Otherwise a
+    // SnkrDunk tier ("All" first) that isn't flagged as disagreeing,
+    // otherwise the first variant finish, otherwise whichever marketplace
+    // price is actually available. The SnkrDunk breakdown still renders
+    // and is still clickable either way - this only decides what starts
+    // as the active market value.
+    const firstReliableTier = snkrDunkTiers.findIndex(t => !t.noSalesData);
+    if (yuyuteiEntry) {
+      // selectTier first just to populate the SnkrDunk breakdown text
+      // (still visible/clickable either way), THEN select Yuyu-tei last so
+      // its price is what actually wins as resolvedCard.marketValue - the
+      // reverse order would let selectTier's own marketValue assignment
+      // clobber Yuyu-tei's right back out.
+      if (snkrDunkTiers.length > 0) selectTier(0);
+      select(yuyuteiRow, yuyuteiEntry.price);
+    } else if (firstReliableTier !== -1) {
+      selectTier(firstReliableTier);
+    } else if (snkrDunkTiers.length > 0) {
       selectTier(0);
     } else if (variantChips.length > 0) {
       finishRow.querySelector('.price-variant-chip').click();
@@ -487,12 +519,33 @@ class CardSearchUI {
         })(),
       ]);
 
-      // SnkrDunk first so its "All" entry (the overall cheapest listing
-      // across every condition - the most accurate current-market figure,
-      // not an average) leads and becomes the default-selected finish,
-      // with PokeWallet's finish-based variants (Normal/Holo/etc.)
-      // available right after.
-      const combined = [...snkrDunkPrices, ...pokeWalletPrices];
+      // Yuyu-tei (a real Japanese shop's retail sell price, cached by a
+      // local script - see scripts/yuyutei-scraper) is checked directly
+      // against SnkrDunk's cached conditions: confirmed directly that
+      // SnkrDunk's "raw condition" price is frequently wrong by 50-100x
+      // for common/bulk-value cards specifically (real listing depth
+      // there is thin enough for a single outlier listing to dominate the
+      // "minimum price" - not a caching bug, a genuine property of a
+      // niche marketplace). A SnkrDunk figure that disagrees with Yuyu-tei
+      // by more than 5x in either direction is untrustworthy noise, not a
+      // real signal - flagged as noSalesData so the UI shows "No sales
+      // data" instead of a misleading number, rather than silently
+      // trusting whichever source happened to load.
+      const yuyuteiPrice = cachedCard?.yuyuteiPriceSgd || null;
+      const PRICE_DISAGREEMENT_RATIO = 5;
+      const disagreesWithYuyutei = (price) => {
+        if (!yuyuteiPrice || !price) return false;
+        const ratio = price / yuyuteiPrice;
+        return ratio > PRICE_DISAGREEMENT_RATIO || ratio < 1 / PRICE_DISAGREEMENT_RATIO;
+      };
+      const checkedSnkrDunkPrices = snkrDunkPrices.map(p => ({ ...p, noSalesData: disagreesWithYuyutei(p.price) }));
+      const yuyuteiEntry = yuyuteiPrice ? [{ label: 'Yuyu-tei', price: yuyuteiPrice, source: 'Yuyu-tei' }] : [];
+
+      // Yuyu-tei leads (preferred default - see above) when available,
+      // then SnkrDunk's "All" entry (the overall cheapest listing across
+      // every condition, not an average), then PokeWallet's finish-based
+      // variants (Normal/Holo/etc.).
+      const combined = [...yuyuteiEntry, ...checkedSnkrDunkPrices, ...pokeWalletPrices];
       if (combined.length > 0) return combined;
     }
 

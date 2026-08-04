@@ -203,21 +203,25 @@ def match_and_update(set_id, scraped_cards, fx_rate):
         row = existing.get(card["card_number"])
         if not row:
             continue
-        update = {
-            "id": row["id"],
-            "name": row["name"],
-            "yuyutei_price_sgd": round(card["price_jpy"] * fx_rate, 4),
-            "yuyutei_updated_at": now,
-        }
-        if card.get("image_url"):
-            update["yuyutei_image_url"] = card["image_url"]
-            # cached_image_url is what the app actually reads first (see
-            # card-catalog.js's getCardImageUrl) - only fill it here when
-            # nothing's there yet, never overwrite an existing TCGdex/
-            # PokeWallet-sourced image with this as a "better" pick.
-            if not row.get("cached_image_url"):
-                update["cached_image_url"] = card["image_url"]
-        updates.append(update)
+        # PostgREST's bulk upsert requires every object in the array to
+        # have the SAME set of keys ("All object keys must match") - a
+        # real, confirmed bug: conditionally including cached_image_url
+        # only on some rows made every batch containing a mix fail
+        # outright. Always including it (echoing back the existing value
+        # when there's nothing new to set) keeps the shape uniform while
+        # still only ever filling a gap, never overwriting a real image.
+        image_url = card.get("image_url")
+        cached_image_url = image_url if (image_url and not row.get("cached_image_url")) else row.get("cached_image_url")
+        updates.append(
+            {
+                "id": row["id"],
+                "name": row["name"],
+                "yuyutei_price_sgd": round(card["price_jpy"] * fx_rate, 4),
+                "yuyutei_updated_at": now,
+                "yuyutei_image_url": image_url,
+                "cached_image_url": cached_image_url,
+            }
+        )
 
     print(f"  ({len(existing)} existing rows in our catalog for {set_id}, {len(updates)} matched by card number)")
     return push_updates(updates)

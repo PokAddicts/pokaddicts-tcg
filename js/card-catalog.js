@@ -125,7 +125,14 @@ function catalogCardFromRow(r) {
     // depth there lets a single outlier dominate the "minimum price"),
     // while Yuyu-tei's real shop pricing for the same cards checked out
     // consistently sane.
-    yuyuteiPriceSgd: r.yuyutei_price_sgd ?? null, yuyuteiUpdatedAt: r.yuyutei_updated_at || null
+    yuyuteiPriceSgd: r.yuyutei_price_sgd ?? null, yuyuteiUpdatedAt: r.yuyutei_updated_at || null,
+    // card.yuyu-tei.jp - a separate CDN subdomain from the blocked main
+    // site, confirmed directly reachable from Supabase's own
+    // infrastructure (only yuyu-tei.jp itself is blocked, domain-wide).
+    // Used as a live fallback image source in getCardImageUrl() below,
+    // same tier as TCGdex/PokeWallet - whichever of the three actually
+    // has something for a given card.
+    yuyuteiImageUrl: r.yuyutei_image_url || null
   };
 }
 

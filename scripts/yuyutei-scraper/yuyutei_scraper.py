@@ -77,16 +77,23 @@ def get_jpy_to_sgd_rate():
 
 
 def parse_set_page(html):
-    """Returns a list of {card_number, price_jpy} for every card-product
-    block on a Yuyu-tei sell-listing page. Sold-out cards still have a
-    real listed price (Yuyu-tei's "would sell for" price even with zero
-    stock) so those are kept too - a shop's asking price, not a live
-    order availability check."""
+    """Returns a list of {card_number, price_jpy, image_url} for every
+    card-product block on a Yuyu-tei sell-listing page. Sold-out cards
+    still have a real listed price (Yuyu-tei's "would sell for" price even
+    with zero stock) so those are kept too - a shop's asking price, not a
+    live order availability check.
+
+    image_url points at card.yuyu-tei.jp - a separate CDN subdomain from
+    the blocked main site, confirmed directly reachable from Supabase
+    (unlike yuyu-tei.jp itself, which is blocked domain-wide, not just on
+    the pricing pages) - so this gets used as a live fallback image
+    source in the app itself, not just cached from here."""
     soup = BeautifulSoup(html, "html.parser")
     results = []
     for product in soup.select(".card-product"):
         number_el = product.select_one("span.d-block.border.border-dark")
         price_el = product.select_one("strong.d-block.text-end")
+        img_el = product.select_one("img.card")
         if not number_el or not price_el:
             continue
         card_number = number_el.get_text(strip=True)
@@ -95,7 +102,13 @@ def parse_set_page(html):
         if not card_number or not price_match:
             continue
         price_jpy = int(price_match.group(1).replace(",", ""))
-        results.append({"card_number": card_number, "price_jpy": price_jpy})
+        image_url = None
+        if img_el and img_el.get("src"):
+            # Swap the thumbnail size (100_140) for the larger one
+            # (200_280) Yuyu-tei also serves at the same path - both
+            # confirmed to exist, larger is ~3x the file size/detail.
+            image_url = img_el["src"].replace("/100_140/", "/200_280/")
+        results.append({"card_number": card_number, "price_jpy": price_jpy, "image_url": image_url})
     return results
 
 
@@ -145,7 +158,7 @@ def match_and_update(set_id, scraped_cards, fx_rate):
 
     select_url = f"{SUPABASE_URL}/rest/v1/cards"
     params = {
-        "select": "id,card_number,name",
+        "select": "id,card_number,name,cached_image_url",
         "language": "eq.ja",
         "set_id": f"eq.{set_id}",
     }
@@ -190,14 +203,21 @@ def match_and_update(set_id, scraped_cards, fx_rate):
         row = existing.get(card["card_number"])
         if not row:
             continue
-        updates.append(
-            {
-                "id": row["id"],
-                "name": row["name"],
-                "yuyutei_price_sgd": round(card["price_jpy"] * fx_rate, 4),
-                "yuyutei_updated_at": now,
-            }
-        )
+        update = {
+            "id": row["id"],
+            "name": row["name"],
+            "yuyutei_price_sgd": round(card["price_jpy"] * fx_rate, 4),
+            "yuyutei_updated_at": now,
+        }
+        if card.get("image_url"):
+            update["yuyutei_image_url"] = card["image_url"]
+            # cached_image_url is what the app actually reads first (see
+            # card-catalog.js's getCardImageUrl) - only fill it here when
+            # nothing's there yet, never overwrite an existing TCGdex/
+            # PokeWallet-sourced image with this as a "better" pick.
+            if not row.get("cached_image_url"):
+                update["cached_image_url"] = card["image_url"]
+        updates.append(update)
 
     print(f"  ({len(existing)} existing rows in our catalog for {set_id}, {len(updates)} matched by card number)")
     return push_updates(updates)

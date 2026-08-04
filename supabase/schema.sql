@@ -185,6 +185,7 @@ create table if not exists cards (
   snkrdunk_updated_at timestamptz, -- null = never refreshed yet; search falls back to a live lookup if this is missing or stale
   yuyutei_price_sgd numeric, -- Yuyu-tei's own JPY retail sell price, converted to SGD - a real Japanese shop chain's asking price, distinct from SnkrDunk (peer marketplace) and PokeWallet (TCGPlayer/CardMarket aggregate). Written by a LOCAL script (scripts/yuyutei-scraper.py) run on the user's own machine, not a Supabase cron - Yuyu-tei blocks Supabase's Edge Function IP range outright (403), but not residential ISP IPs, so this can only run from a real home connection. null = never scraped yet
   yuyutei_updated_at timestamptz, -- null = never scraped yet
+  yuyutei_image_url text, -- Yuyu-tei's own card image (card.yuyu-tei.jp, a separate CDN subdomain from the blocked main site - confirmed directly reachable from Supabase, unlike yuyu-tei.jp itself), written by the same local scraper. A useful fallback when TCGdex/PokeWallet both have nothing for a card. Unlike price, an image never changes once printed, so this is never refreshed/expired once set.
   created_at timestamptz not null default now()
 );
 create index if not exists cards_name_idx on cards(name);

@@ -77,26 +77,34 @@ def get_jpy_to_sgd_rate():
 
 
 def parse_set_page(html):
-    """Returns a list of {card_number, price_jpy, image_url} for every
-    card-product block on a Yuyu-tei sell-listing page. Sold-out cards
-    still have a real listed price (Yuyu-tei's "would sell for" price even
-    with zero stock) so those are kept too - a shop's asking price, not a
-    live order availability check.
+    """Returns a list of {card_number, price_jpy, image_url, name} for
+    every card-product block on a Yuyu-tei sell-listing page. Sold-out
+    cards still have a real listed price (Yuyu-tei's "would sell for"
+    price even with zero stock) so those are kept too - a shop's asking
+    price, not a live order availability check.
 
     image_url points at card.yuyu-tei.jp - a separate CDN subdomain from
     the blocked main site, confirmed directly reachable from Supabase
     (unlike yuyu-tei.jp itself, which is blocked domain-wide, not just on
     the pricing pages) - so this gets used as a live fallback image
-    source in the app itself, not just cached from here."""
+    source in the app itself, not just cached from here.
+
+    name (the card's own Japanese name, e.g. "メガレックウザex") isn't used
+    by the price-refresh flow below (which only ever updates EXISTING rows
+    matched by card_number, echoing back the already-known name) but is
+    needed by anything enumerating Yuyu-tei to discover cards that don't
+    exist in the catalog yet at all - see enumerate_yuyutei_catalog.py."""
     soup = BeautifulSoup(html, "html.parser")
     results = []
     for product in soup.select(".card-product"):
         number_el = product.select_one("span.d-block.border.border-dark")
         price_el = product.select_one("strong.d-block.text-end")
         img_el = product.select_one("img.card")
+        name_el = product.select_one("h4")
         if not number_el or not price_el:
             continue
         card_number = number_el.get_text(strip=True)
+        name = name_el.get_text(strip=True) if name_el else None
         price_text = price_el.get_text(strip=True)
         price_match = re.search(r"([\d,]+)\s*円", price_text)
         if not card_number or not price_match:
@@ -108,7 +116,7 @@ def parse_set_page(html):
             # (200_280) Yuyu-tei also serves at the same path - both
             # confirmed to exist, larger is ~3x the file size/detail.
             image_url = img_el["src"].replace("/100_140/", "/200_280/")
-        results.append({"card_number": card_number, "price_jpy": price_jpy, "image_url": image_url})
+        results.append({"card_number": card_number, "price_jpy": price_jpy, "image_url": image_url, "name": name})
     return results
 
 

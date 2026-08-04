@@ -6,44 +6,37 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "@supabase/server";
 
-// One-time (self-draining) priority backfill for the ~944 Japanese secret
-// rares (AR/SR/SAR/UR tier cards numbered beyond their set's official
-// count) bulk-inserted directly from SnkrDunk data after discovering
-// TCGdex's own database is missing them entirely for 68 sets (confirmed:
-// TCGdex 404s on e.g. SV10-109 "Team Rocket's Meowth AR", even though the
-// card is real and TCGdex has every OTHER card in that same set). Those
-// rows were inserted with only a name/set/number (from SnkrDunk) and no
-// pricing - this fills in the better PokeWallet name/price data for them,
-// same source used for every other Japanese card's pricing.
+// Continuous, whole-catalog PokeWallet refresh - same role for the
+// Japanese card catalog's TCGPlayer/CardMarket pricing that
+// refresh-snkrdunk-prices plays for SnkrDunk pricing, and
+// refresh-catalog-prices plays for the English catalog.
 //
-// PokeWallet has a hard 100 requests/hour cap (shared with live user
-// lookups - see js/pokewallet-client.js), so this can't run as one big
-// sweep. BATCH_SIZE=6 on a 5-minute cron tick = 72/hour, leaving ~28/hour
-// of headroom for real-time lookups during the many hours this takes to
-// drain (~944 cards / 72 per hour =~ 13 hours for a first full pass).
+// Replaces the old lazy "look it up live when someone searches the card"
+// model entirely (see js/card-search-ui.js's fetchAllPricesForCard) - the
+// app now ALWAYS reads whatever's cached here and shows a "last updated"
+// timestamp alongside it, rather than blocking the search UI on a live
+// PokeWallet round trip. That live-on-search path was also the ONLY thing
+// that ever refreshed PokeWallet data before this cron existed - removing
+// it without this would have left most of the catalog's TCGPlayer/
+// CardMarket price permanently stuck at whatever it last was.
 //
-// Self-draining: selects rows ordered by created_at DESC (newest first),
-// which naturally prioritizes this batch of freshly-inserted rows ahead of
-// the much older, already-lazily-resolving general JA catalog - once every
-// row in this batch has pokewallet_updated_at set (match or no match),
-// the WHERE clause below simply stops returning rows and every future
-// invocation is a no-op. Not scoped to any special marker column - a
-// genuinely new TCGdex-synced card slipping into this same recency window
-// just gets its PokeWallet price warmed a bit earlier than it otherwise
-// would have, which is harmless.
+// PokeWallet has a hard 100 requests/hour cap. Since the interactive app
+// no longer makes any live PokeWallet calls of its own (this cron is now
+// the only caller), there's no concurrent usage to reserve headroom for -
+// BATCH_SIZE=7 on a 5-minute tick = 84/hour, comfortably under the cap
+// with a safety margin. Continuous (not self-draining): ordered by oldest
+// pokewallet_updated_at first (nulls first), so it naturally cycles
+// through the whole ~9,000-card Japanese catalog and back around to the
+// start again, keeping everything reasonably fresh on a multi-day rolling
+// basis rather than a one-time pass.
 //
 // Only 1 PokeWallet request per card (search) - the search response
 // already embeds full tcgplayer/cardmarket pricing per result, same as
 // js/pokewallet-client.js's findCardByNameAndNumber + extractAllVariantsSGD
 // combined, so there's no need for a second per-card detail request.
-// Deliberately does NOT touch images - the existing client-side
-// getCardImageUrl() race (TCGdex + PokeWallet) already covers any card
-// with an empty `image` field the first time it's actually viewed, exactly
-// like the rest of the Japanese catalog; duplicating that here would
-// double this job's PokeWallet request budget for no benefit.
 
 const POKEWALLET_BASE_URL = "https://api.pokewallet.io";
-const BATCH_SIZE = 6;
+const BATCH_SIZE = 7;
 const FX_FALLBACK: Record<string, number> = { USD: 1.29, EUR: 1.41 };
 
 async function getFxRates(): Promise<Record<string, number>> {
@@ -72,8 +65,8 @@ async function pokeWalletSearch(pwKey: string, query: string) {
 
 // Same progressive-relaxation as js/pokewallet-client.js's
 // findCardByNameAndNumber, but trims the query itself (not just relying on
-// one shot) since these SnkrDunk-derived names sometimes carry leftover
-// cruft (e.g. "Zeraora V SR: SA") that a single exact query might miss.
+// one shot) since some catalog names carry leftover cruft (e.g. "Zeraora V
+// SR: SA") that a single exact query might miss.
 async function findMatch(pwKey: string, name: string, number: string) {
   const words = name.split(/\s+/).filter(Boolean);
   for (let trim = 0; trim <= 3 && words.length - trim > 0; trim++) {
@@ -129,15 +122,14 @@ export default {
       .from("cards")
       .select("id, name, card_number")
       .eq("language", "ja")
-      .is("pokewallet_updated_at", null)
-      .order("created_at", { ascending: false })
+      .order("pokewallet_updated_at", { ascending: true, nullsFirst: true })
       .limit(BATCH_SIZE);
 
     if (error) {
       return Response.json({ error: error.message }, { status: 500 });
     }
     if (!cards || cards.length === 0) {
-      return Response.json({ message: "No pending Japanese cards found.", processed: 0 });
+      return Response.json({ message: "No Japanese cards found.", processed: 0 });
     }
 
     const fx = await getFxRates();
@@ -163,8 +155,6 @@ export default {
         const variants = extractAllVariantsSGD(match, fx);
 
         const update: Record<string, unknown> = { pokewallet_updated_at: new Date().toISOString() };
-        if (cleanName) update.name = cleanName;
-        if (setName) update.set_name = setName;
         if (variants.length > 0) update.pokewallet_variants = variants;
         if (price !== null) {
           update.market_value_sgd = price;
@@ -177,7 +167,7 @@ export default {
       } catch (err) {
         failed++;
         if (sampleErrors.length < 10) sampleErrors.push(`${card.id} (${card.name}): ${err}`);
-        console.warn(`Failed PokeWallet backfill for ${card.id}:`, err);
+        console.warn(`Failed PokeWallet refresh for ${card.id}:`, err);
       }
     }
 
@@ -190,7 +180,7 @@ export default {
   1. Run `supabase start` (see: https://supabase.com/docs/reference/cli/supabase-start)
   2. Make an HTTP request:
 
-  curl -i --location --request POST 'http://127.0.0.1:54321/functions/v1/backfill-pokewallet-secret-rares' \
+  curl -i --location --request POST 'http://127.0.0.1:54321/functions/v1/refresh-pokewallet-prices' \
     --header 'apiKey: <service-role-key>'
 
 */

@@ -509,9 +509,26 @@ class InventoryComponent {
   // matched to the catalog (manually-typed name, sealed product, binder
   // tier) has no per-source breakdown to show - just the single market
   // value recorded at intake.
+  // Every price here comes straight from cache, kept fresh entirely by
+  // background crons (refresh-snkrdunk-prices, refresh-pokewallet-prices,
+  // the local Yuyu-tei scraper) rather than a live lookup - so each line
+  // shows how old it is instead of implying it's live.
+  formatPriceAge(iso) {
+    if (!iso) return '';
+    const ms = Date.now() - new Date(iso).getTime();
+    if (ms < 60 * 1000) return 'cached';
+    const mins = Math.round(ms / 60000);
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.round(mins / 60);
+    if (hours < 48) return `${hours}h ago`;
+    return `${Math.round(hours / 24)}d ago`;
+  }
+
   renderMarketPriceRows(item) {
-    const sourceLine = (label, value, placeholder = 'Not cached yet') =>
-      `<div class="price-source-info${value ? '' : ' disabled'}">${label} ${value || placeholder}</div>`;
+    const sourceLine = (label, value, updatedAt, placeholder = 'Not cached yet') => {
+      const age = value ? this.formatPriceAge(updatedAt) : '';
+      return `<div class="price-source-info${value ? '' : ' disabled'}">${label} ${value || placeholder}${age ? ` <span class="price-age">· ${age}</span>` : ''}</div>`;
+    };
     const card = item.catalogCardId && window.cardCatalog ? window.cardCatalog.getCardById(item.catalogCardId) : null;
 
     if (!card) {
@@ -527,7 +544,7 @@ class InventoryComponent {
       const isTcg = (card.priceSource || '').startsWith('TCGPlayer');
       const tcgVal = card.marketValueSgd > 0 && isTcg ? `S$${card.marketValueSgd.toFixed(2)}` : null;
       const cmVal = card.marketValueSgd > 0 && !isTcg ? `S$${card.marketValueSgd.toFixed(2)}` : null;
-      return sourceLine('TCG Player', tcgVal) + sourceLine('CardMarket', cmVal) + sourceLine('PriceCharting', null, 'Coming soon');
+      return sourceLine('TCG Player', tcgVal, card.priceUpdatedAt) + sourceLine('CardMarket', cmVal, card.priceUpdatedAt) + sourceLine('PriceCharting', null, null, 'Coming soon');
     }
 
     const wantGraded = item.type === 'slab';
@@ -547,17 +564,18 @@ class InventoryComponent {
       const ratio = price / yuyuteiPrice;
       return ratio > 5 || ratio < 1 / 5;
     };
-    const tail = sourceLine('Yuyu-tei', yuyuteiPrice ? `S$${yuyuteiPrice.toFixed(2)}` : null)
-      + sourceLine('TCG Player', tcg ? `S$${tcg.price.toFixed(2)}` : null)
-      + sourceLine('CardMarket', cm ? `S$${cm.price.toFixed(2)}` : null)
-      + sourceLine('PriceCharting', null, 'Coming soon');
+    const tail = sourceLine('Yuyu-tei', yuyuteiPrice ? `S$${yuyuteiPrice.toFixed(2)}` : null, card.yuyuteiUpdatedAt)
+      + sourceLine('TCG Player', tcg ? `S$${tcg.price.toFixed(2)}` : null, card.pokewalletUpdatedAt)
+      + sourceLine('CardMarket', cm ? `S$${cm.price.toFixed(2)}` : null, card.pokewalletUpdatedAt)
+      + sourceLine('PriceCharting', null, null, 'Coming soon');
 
     if (tiers.length === 0) {
-      return sourceLine('SNKRDUNK', null) + tail;
+      return sourceLine('SNKRDUNK', null, null) + tail;
     }
 
     const rowId = `item-detail-snkrdunk-${item.id}`;
-    const tierText = (t) => disagreesWithYuyutei(t.price) ? 'SNKRDUNK No sales data' : `SNKRDUNK S$${t.price.toFixed(2)}`;
+    const snkrAge = this.formatPriceAge(card.snkrdunkUpdatedAt);
+    const tierText = (t) => disagreesWithYuyutei(t.price) ? 'SNKRDUNK No sales data' : `SNKRDUNK S$${t.price.toFixed(2)}${snkrAge ? ` · ${snkrAge}` : ''}`;
     // Deferred so the chip row exists in the DOM first - this whole
     // string is still being assembled into a template literal the caller
     // hasn't written to innerHTML yet.

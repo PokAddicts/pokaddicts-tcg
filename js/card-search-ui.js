@@ -13,6 +13,7 @@ class CardSearchUI {
     this.onConfirmCallback = null;
     this.resolvedCard = null;
     this.debounceTimer = null;
+    this.searchToken = 0;
     this.isGradedSlab = () => false;
   }
 
@@ -143,6 +144,22 @@ class CardSearchUI {
   // these (a variant chip, a tier chip, or one of the two marketplace
   // lines) is ever the active selection at a time, and that's what
   // becomes this.resolvedCard.marketValue - clicking any of them clears
+  // Every Japanese price now comes straight from cache (see
+  // fetchAllPricesForCard) rather than a live lookup, so the UI shows how
+  // old each figure is instead of implying it's live - "just now" reads
+  // oddly for something that's genuinely been sitting cached for minutes,
+  // so anything under a minute just says "cached" instead.
+  formatPriceAge(iso) {
+    if (!iso) return '';
+    const ms = Date.now() - new Date(iso).getTime();
+    if (ms < 60 * 1000) return 'cached';
+    const mins = Math.round(ms / 60000);
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.round(mins / 60);
+    if (hours < 48) return `${hours}h ago`;
+    return `${Math.round(hours / 24)}d ago`;
+  }
+
   // every other selected state first.
   renderPriceGroups(priceLine, allPrices) {
     const yuyuteiEntry = allPrices.find(p => p.source === 'Yuyu-tei') || null;
@@ -151,7 +168,7 @@ class CardSearchUI {
     const finishGroups = marketplaceEntries.length > 0 ? this.groupVariantsByFinish(marketplaceEntries) : [];
 
     const variantChips = finishGroups.length > 1 ? finishGroups.map(g => ({ label: g.label, entries: g.entries })) : [];
-    const snkrDunkTiers = snkrDunkEntries.map(e => ({ label: e.label, price: e.price, noSalesData: !!e.noSalesData }));
+    const snkrDunkTiers = snkrDunkEntries.map(e => ({ label: e.label, price: e.price, noSalesData: !!e.noSalesData, updatedAt: e.updatedAt }));
     const defaultEntries = (finishGroups[0] || { entries: [] }).entries;
     const findEntry = (entries, prefix) => entries.find(e => (e.source || '').startsWith(prefix));
 
@@ -182,8 +199,10 @@ class CardSearchUI {
     const refreshReferenceRows = () => {
       const tcg = findEntry(referenceEntries, 'TCGPlayer');
       const cm = findEntry(referenceEntries, 'CardMarket');
-      tcgRow.textContent = tcg ? `TCG Player S$${tcg.price.toFixed(2)}` : 'TCG Player -';
-      cmRow.textContent = cm ? `CardMarket S$${cm.price.toFixed(2)}` : 'CardMarket -';
+      const tcgAge = this.formatPriceAge(tcg?.updatedAt);
+      const cmAge = this.formatPriceAge(cm?.updatedAt);
+      tcgRow.innerHTML = tcg ? `TCG Player S$${tcg.price.toFixed(2)}${tcgAge ? ` <span class="price-age">· ${tcgAge}</span>` : ''}` : 'TCG Player -';
+      cmRow.innerHTML = cm ? `CardMarket S$${cm.price.toFixed(2)}${cmAge ? ` <span class="price-age">· ${cmAge}</span>` : ''}` : 'CardMarket -';
       tcgRow.classList.toggle('disabled', !tcg);
       cmRow.classList.toggle('disabled', !cm);
     };
@@ -224,7 +243,8 @@ class CardSearchUI {
         return;
       }
       snkrDunkRow.classList.remove('disabled');
-      snkrDunkRow.textContent = `SNKRDUNK S$${tier.price.toFixed(2)}`;
+      const age = this.formatPriceAge(tier.updatedAt);
+      snkrDunkRow.innerHTML = `SNKRDUNK S$${tier.price.toFixed(2)}${age ? ` <span class="price-age">· ${age}</span>` : ''}`;
       snkrDunkRow.classList.add('selected');
       this.resolvedCard.marketValue = tier.price;
     };
@@ -253,7 +273,8 @@ class CardSearchUI {
       const cm = findEntry(referenceEntries, 'CardMarket');
       if (cm) select(cmRow, cm.price);
     });
-    yuyuteiRow.textContent = yuyuteiEntry ? `Yuyu-tei S$${yuyuteiEntry.price.toFixed(2)}` : 'Yuyu-tei -';
+    const yuyuteiAge = this.formatPriceAge(yuyuteiEntry?.updatedAt);
+    yuyuteiRow.innerHTML = yuyuteiEntry ? `Yuyu-tei S$${yuyuteiEntry.price.toFixed(2)}${yuyuteiAge ? ` <span class="price-age">· ${yuyuteiAge}</span>` : ''}` : 'Yuyu-tei -';
     yuyuteiRow.classList.toggle('disabled', !yuyuteiEntry);
     if (yuyuteiEntry) yuyuteiRow.addEventListener('click', () => select(yuyuteiRow, yuyuteiEntry.price));
 
@@ -336,6 +357,17 @@ class CardSearchUI {
     const dropdown = document.getElementById(this.ids.dropdownId);
     if (!dropdown) return;
 
+    // Typing fast enough to trigger two overlapping searches (each one
+    // does several sequential network calls) used to let whichever one's
+    // async work finished LAST win, even if it was the older/shorter
+    // query - a real, confirmed bug that made results seem to require
+    // typing slowly to "register" correctly, since a fast typist's final
+    // keystroke's search could get overwritten by a stale in-flight one
+    // resolving after it. Every render below past the first (synchronous)
+    // one is guarded against this token going stale.
+    const myToken = ++this.searchToken;
+    const isCurrent = () => myToken === this.searchToken;
+
     const trimmedQuery = (query || '').trim();
     // A single digit is still a meaningful start of a card-number search
     // (e.g. "5"), so only apply the 2-char minimum to letters - requiring
@@ -387,8 +419,10 @@ class CardSearchUI {
 
     try {
       const results = await window.tcgdexClient.searchCards(query, { limit: 10 });
+      if (!isCurrent()) return;
       const liveCards = results.map(r => this.normalizeLiveSearchResult(r, 'en'));
       await window.cardCatalog.cacheLiveResults(liveCards);
+      if (!isCurrent()) return;
 
       const merged = [...localMatches];
       liveCards.forEach(lc => { if (!merged.some(m => m.id === lc.id)) merged.push(lc); });
@@ -404,6 +438,7 @@ class CardSearchUI {
       if (ranked.length < 5 && namePart) {
         const nameHints = window.cardCatalog.buildJapaneseNameHints(namePart);
         const jpMatches = await window.cardCatalog.findJapaneseMatches(numberPart, nameHints, 5);
+        if (!isCurrent()) return;
         jpMatches.forEach(m => { if (!ranked.some(r => r.id === m.id)) ranked.push(m); });
       }
 
@@ -417,6 +452,7 @@ class CardSearchUI {
       dropdown.innerHTML = this.renderRows(ranked);
     } catch (err) {
       console.error('Live search fallback failed:', err);
+      if (!isCurrent()) return;
       dropdown.innerHTML = localMatches.length > 0
         ? this.renderRows(window.cardCatalog.dedupeByNumber(localMatches))
         : `<div class="card-search-empty">No catalog matches - type your own details below.</div>`;
@@ -426,98 +462,36 @@ class CardSearchUI {
   // Japanese cards use PokeWallet for pricing, not TCGdex - TCGdex's own
   // price data for Japanese secret/art rares can be badly wrong (a real
   // ~$177 Magikarp Art Rare priced at €0.08 on TCGdex, apparently linked
-  // to the wrong product). English cards keep using TCGdex, which priced
-  // normally in testing. Falls back to TCGdex for a Japanese card if
-  // PokeWallet doesn't have it either.
-  // Always does a live lookup and returns EVERY sub-variant (Normal,
-  // Reverse Holofoil, 1st Edition Holofoil, etc.) TCGdex/PokeWallet has
-  // pricing for - a real gap existed here where this only ever returned
-  // ONE number (extractAllMarketPricesSGD, "normal" preferred), silently
-  // hiding every other variant a card had (e.g. Gastly 63/112's reverse
-  // holo, or Blaine's Moltres 1/132's non-1st-edition print). TCGdex has
-  // no rate limit, so there's no real cost to always doing this live -
-  // see selectCard() for the instant provisional price shown from cache
-  // while this resolves.
-  async fetchAllPricesForCard(cardId, cardLang, name, number) {
+  // to the wrong product), so Japanese cards read Yuyu-tei/SnkrDunk/
+  // PokeWallet's cache instead (see the cardLang === 'ja' branch below -
+  // cache-only, never a live lookup). If a Japanese card has none of
+  // those cached yet, or for any English card, this falls through to a
+  // live TCGdex lookup - TCGdex has no rate limit, so there's no real
+  // cost to always doing that one live. Returns EVERY sub-variant
+  // (Normal, Reverse Holofoil, 1st Edition Holofoil, etc.) TCGdex has
+  // pricing for, not just one merged number - see selectCard() for the
+  // instant provisional price shown from cache while this resolves.
+  async fetchAllPricesForCard(cardId, cardLang) {
     if (cardLang === 'ja') {
       const wantGraded = this.isGradedSlab();
 
-      // Instant read paths: refresh-snkrdunk-prices caches every Japanese
-      // card's condition breakdown on a ~3-6h cycle (see
-      // supabase/schema.sql) - a fresh cached array here skips the live
-      // search+price-lookup round trip entirely. PokeWallet has no bulk
-      // cron (its 100/hour rate limit rules that out for the whole
-      // catalog) but gets cached LAZILY the first time any device
-      // actually looks a card up - see cachePokeWalletPricePermanently.
-      // 24h freshness for PokeWallet (matches the English cache's own
-      // window) since there's no reason to re-burn rate-limited requests
-      // more often than that; 12h for SnkrDunk to match its cron's target
-      // cycle time.
+      // Cache-only, always - deliberately NEVER does a live lookup here
+      // anymore. Every Japanese price source is now kept fresh entirely by
+      // its own background cron (refresh-snkrdunk-prices,
+      // refresh-pokewallet-prices, the local Yuyu-tei scraper), so the
+      // search UI just reads whatever's already there and shows how old
+      // it is - see renderPriceGroups' timestamp rendering. This used to
+      // do a live PokeWallet/SnkrDunk lookup whenever the cache passed a
+      // freshness window, which was the actual cause of prices "taking a
+      // while to load" (PokeWallet's window in particular was short
+      // enough, and these bulk-imported cards searched rarely enough,
+      // that a live re-check fired on most searches).
       const cachedCard = window.cardCatalog.getCardById(cardId);
-      const snkrDunkFresh = cachedCard?.snkrdunkUpdatedAt && cachedCard.snkrdunkConditions?.length > 0
-        && (Date.now() - new Date(cachedCard.snkrdunkUpdatedAt).getTime()) < 12 * 60 * 60 * 1000;
-      const pokeWalletFresh = cachedCard?.pokewalletUpdatedAt
-        && (Date.now() - new Date(cachedCard.pokewalletUpdatedAt).getTime()) < 24 * 60 * 60 * 1000;
-
-      // PokeWallet (finish-based: Normal/Holo/etc.) and SnkrDunk
-      // (condition/grade-based: raw A/B/D, PSA 9/10, etc. - SnkrDunk deals
-      // in graded cards too) fetched at the same time, not one after the
-      // other - they're independent sources so there's no reason to wait
-      // for one before starting the other.
-      // Fallback used whenever a live re-check is attempted (cache older
-      // than the freshness window above) but fails or finds nothing - a
-      // stale cached price is still far more useful than blank, and a
-      // transient failure (PokeWallet's 100/hour cap in particular) is
-      // common enough that silently showing nothing was a real, confirmed
-      // gap: a card priced just yesterday would go blank on any rate-limit
-      // blip today instead of keeping its still-reasonable last price.
-      const stalePokeWalletVariants = cachedCard?.pokewalletVariants || [];
-      const staleSnkrDunkDisplay = cachedCard?.snkrdunkConditions?.length > 0
+      const pokeWalletPrices = (cachedCard?.pokewalletVariants || [])
+        .map(p => ({ ...p, updatedAt: cachedCard.pokewalletUpdatedAt }));
+      const snkrDunkPrices = cachedCard?.snkrdunkConditions?.length > 0
         ? window.snkrDunkClient.buildDisplayList(cachedCard.snkrdunkConditions, wantGraded)
         : [];
-
-      const [pokeWalletPrices, snkrDunkPrices] = await Promise.all([
-        (async () => {
-          if (pokeWalletFresh) return cachedCard.pokewalletVariants || [];
-          if (!window.pokeWalletClient?.configured) return stalePokeWalletVariants;
-          try {
-            const match = await window.pokeWalletClient.findCardByNameAndNumber(name, number);
-            if (!match) return stalePokeWalletVariants;
-            const detail = await window.pokeWalletClient.getCard(match.id);
-            const variants = window.pokeWalletClient.extractAllVariantsSGD(detail);
-            // Fire-and-forget: cache this result now so the NEXT lookup
-            // of the same card (this device or any other) is instant,
-            // rather than repeating the same live round trip forever.
-            if (variants.length > 0) window.cardCatalog.cachePokeWalletPricePermanently(cardId, variants);
-            return variants.length > 0 ? variants : stalePokeWalletVariants;
-          } catch (err) {
-            console.warn('PokeWallet price fetch failed:', err);
-            return stalePokeWalletVariants;
-          }
-        })(),
-        (async () => {
-          // "All" (SnkrDunk's own cheapest-across-every-condition figure -
-          // confirmed directly against their site) always leads, followed
-          // by the individual conditions filtered to just raw or just
-          // graded - a raw card intake showing PSA 10 prices (or vice
-          // versa) would be actively misleading.
-          if (snkrDunkFresh) {
-            return window.snkrDunkClient.buildDisplayList(cachedCard.snkrdunkConditions, wantGraded);
-          }
-          if (!window.snkrDunkClient?.configured) return staleSnkrDunkDisplay;
-          try {
-            const match = await window.snkrDunkClient.findCardByNameAndNumber(name, number);
-            if (!match) return staleSnkrDunkDisplay;
-            const conditions = await window.snkrDunkClient.getConditionPrices(match.id);
-            const conditionPrices = window.snkrDunkClient.extractConditionPricesSGD(conditions);
-            const display = window.snkrDunkClient.buildDisplayList(conditionPrices, wantGraded);
-            return display.length > 0 ? display : staleSnkrDunkDisplay;
-          } catch (err) {
-            console.warn('SnkrDunk price fetch failed:', err);
-            return staleSnkrDunkDisplay;
-          }
-        })(),
-      ]);
 
       // Yuyu-tei (a real Japanese shop's retail sell price, cached by a
       // local script - see scripts/yuyutei-scraper) is checked directly
@@ -538,8 +512,8 @@ class CardSearchUI {
         const ratio = price / yuyuteiPrice;
         return ratio > PRICE_DISAGREEMENT_RATIO || ratio < 1 / PRICE_DISAGREEMENT_RATIO;
       };
-      const checkedSnkrDunkPrices = snkrDunkPrices.map(p => ({ ...p, noSalesData: disagreesWithYuyutei(p.price) }));
-      const yuyuteiEntry = yuyuteiPrice ? [{ label: 'Yuyu-tei', price: yuyuteiPrice, source: 'Yuyu-tei' }] : [];
+      const checkedSnkrDunkPrices = snkrDunkPrices.map(p => ({ ...p, noSalesData: disagreesWithYuyutei(p.price), updatedAt: cachedCard.snkrdunkUpdatedAt }));
+      const yuyuteiEntry = yuyuteiPrice ? [{ label: 'Yuyu-tei', price: yuyuteiPrice, source: 'Yuyu-tei', updatedAt: cachedCard.yuyuteiUpdatedAt }] : [];
 
       // Yuyu-tei leads (preferred default - see above) when available,
       // then SnkrDunk's "All" entry (the overall cheapest listing across
@@ -641,24 +615,13 @@ class CardSearchUI {
           if (priceLine) priceLine.innerHTML = `<div>S$${cachedCard.marketValueSgd.toFixed(2)} (${this.formatPriceSource(cachedCard.priceSource || '')})</div>`;
         }
       }
-    } else {
-      // Same instant-provisional-price idea as English, above - Yuyu-tei's
-      // cached price never needs a live re-check at all (see
-      // fetchAllPricesForCard), so there's no reason to wait for it behind
-      // PokeWallet's live lookup, which DOES commonly run (its 24h
-      // freshness window is much shorter than how often these get
-      // actually searched, so it's frequently stale) and was the real
-      // source of "still takes a while to load" - Yuyu-tei/SnkrDunk were
-      // already instant, but Promise.all in fetchAllPricesForCard held the
-      // whole render hostage to whichever source was slowest.
-      const cachedCard = window.cardCatalog.getCardById(cardId);
-      if (cachedCard?.yuyuteiPriceSgd > 0) {
-        const priceLine = document.getElementById('card-search-price-line');
-        if (priceLine) priceLine.innerHTML = `<div>S$${cachedCard.yuyuteiPriceSgd.toFixed(2)} (Yuyu-tei)</div>`;
-      }
     }
+    // Japanese cards don't need an instant-provisional line the way
+    // English does below - fetchAllPricesForCard's 'ja' branch is now
+    // pure cache reads with no live lookup at all (see there), so the
+    // full price breakdown below resolves on essentially the same tick.
 
-    const pricePromise = this.fetchAllPricesForCard(cardId, cardLang, displayName, card.number)
+    const pricePromise = this.fetchAllPricesForCard(cardId, cardLang)
       .then((allPrices) => {
         if (allPrices.length > 0) gotPrice = true;
 
@@ -667,7 +630,7 @@ class CardSearchUI {
 
         if (allPrices.length === 0) {
           this.resolvedCard.marketValue = 0;
-          priceLine.textContent = 'No live price found';
+          priceLine.textContent = cardLang === 'ja' ? 'No price cached yet' : 'No live price found';
           return;
         }
 

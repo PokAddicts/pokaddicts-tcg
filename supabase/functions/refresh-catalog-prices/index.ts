@@ -60,6 +60,32 @@ function extractMarketPrice(cardDetail: any) {
   return { price: 0, currency: null as string | null, source: null as string | null };
 }
 
+function humanizeVariantLabel(key: string) {
+  return key.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+}
+
+// Same logic as js/tcgdex-client.js's extractAllVariants - every sellable
+// TCGPlayer sub-variant (Normal, Holofoil, Reverse Holofoil, 1st Edition
+// Holofoil, etc.) plus CardMarket, not just the one "best" number
+// extractMarketPrice above collapses down to for market_value_sgd. Kept in
+// sync manually since Edge Functions can't share code with the browser
+// bundle without a build step this project doesn't have.
+function extractAllVariantsSGD(cardDetail: any, fx: Record<string, number>) {
+  const variants: { label: string; price: number; source: string }[] = [];
+  const tcg = cardDetail?.pricing?.tcgplayer;
+  if (tcg) {
+    for (const [key, v] of Object.entries(tcg)) {
+      if (v && typeof v === "object" && (v as any).marketPrice) {
+        variants.push({ label: humanizeVariantLabel(key), price: (v as any).marketPrice * (fx.USD || 1), source: "TCGPlayer (USD→SGD)" });
+      }
+    }
+  }
+  const cm = cardDetail?.pricing?.cardmarket;
+  if (cm?.avg) variants.push({ label: "Normal", price: cm.avg * (fx.EUR || 1), source: "CardMarket (EUR→SGD)" });
+  if (cm?.["avg-holo"]) variants.push({ label: "Holo", price: cm["avg-holo"] * (fx.EUR || 1), source: "CardMarket (EUR→SGD)" });
+  return variants;
+}
+
 export default {
   fetch: withSupabase({ auth: ["secret"] }, async (_req, ctx) => {
     const admin = ctx.supabaseAdmin;
@@ -91,6 +117,7 @@ export default {
 
         const marketValueSgd = price > 0 && currency ? price * (fx[currency] || 1) : 0;
         const priceSource = price > 0 && currency ? `${source} (${currency}→SGD)` : null;
+        const variants = extractAllVariantsSGD(detail, fx);
 
         const { error: updateErr } = await admin
           .from("cards")
@@ -98,6 +125,7 @@ export default {
             market_value_sgd: marketValueSgd,
             price_source: priceSource,
             price_updated_at: new Date().toISOString(),
+            tcgdex_variants: variants.length > 0 ? variants : null,
           })
           .eq("id", card.id);
 

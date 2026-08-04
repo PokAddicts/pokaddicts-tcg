@@ -536,11 +536,17 @@ class InventoryComponent {
     }
 
     if (card.language !== 'ja') {
-      // The daily English cache only stores ONE merged "best" price today
-      // (TCGPlayer preferred, CardMarket only as a fallback when there's
-      // no TCGPlayer listing at all - see refresh-catalog-prices), not
-      // both separately yet, so only whichever one was actually cached
-      // shows a real number.
+      // tcgdex_variants (refresh-catalog-prices) has the FULL TCGPlayer +
+      // CardMarket breakdown, TCGdex having both with no rate limit at
+      // all - falls back to the single merged marketValueSgd number for
+      // any card the cron hasn't reached yet (new cards start null).
+      const tcg = card.tcgdexVariants?.find(v => (v.source || '').startsWith('TCGPlayer'));
+      const cm = card.tcgdexVariants?.find(v => (v.source || '').startsWith('CardMarket'));
+      if (tcg || cm) {
+        return sourceLine('TCG Player', tcg ? `S$${tcg.price.toFixed(2)}` : null, card.priceUpdatedAt)
+          + sourceLine('CardMarket', cm ? `S$${cm.price.toFixed(2)}` : null, card.priceUpdatedAt)
+          + sourceLine('PriceCharting', null, null, 'Coming soon');
+      }
       const isTcg = (card.priceSource || '').startsWith('TCGPlayer');
       const tcgVal = card.marketValueSgd > 0 && isTcg ? `S$${card.marketValueSgd.toFixed(2)}` : null;
       const cmVal = card.marketValueSgd > 0 && !isTcg ? `S$${card.marketValueSgd.toFixed(2)}` : null;

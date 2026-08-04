@@ -102,6 +102,13 @@ function catalogCardFromRow(r) {
     id: r.id, name: r.name, set: r.set_name || '', setId: r.set_id || '', number: r.card_number || '',
     language: r.language || '', image: r.image || '', lowQuality: !!r.low_quality,
     marketValueSgd: r.market_value_sgd ?? null, priceSource: r.price_source || null, priceUpdatedAt: r.price_updated_at || null,
+    // Full TCGPlayer (every sub-variant)+CardMarket breakdown, English
+    // cards only - refresh-catalog-prices' fuller sibling to the single
+    // merged marketValueSgd number above. TCGdex itself already has both
+    // sources with no rate limit; this just stops collapsing it to one
+    // figure for anywhere that wants the full picture (see
+    // js/components/inventory.js's renderMarketPriceRows).
+    tcgdexVariants: r.tcgdex_variants || null,
     cachedImageUrl: r.cached_image_url ?? null,
     // Written by refresh-snkrdunk-prices (Japanese cards only, ~3-6h cron
     // cycle - see supabase/schema.sql) rather than by anything in this

@@ -641,6 +641,21 @@ class CardSearchUI {
           if (priceLine) priceLine.innerHTML = `<div>S$${cachedCard.marketValueSgd.toFixed(2)} (${this.formatPriceSource(cachedCard.priceSource || '')})</div>`;
         }
       }
+    } else {
+      // Same instant-provisional-price idea as English, above - Yuyu-tei's
+      // cached price never needs a live re-check at all (see
+      // fetchAllPricesForCard), so there's no reason to wait for it behind
+      // PokeWallet's live lookup, which DOES commonly run (its 24h
+      // freshness window is much shorter than how often these get
+      // actually searched, so it's frequently stale) and was the real
+      // source of "still takes a while to load" - Yuyu-tei/SnkrDunk were
+      // already instant, but Promise.all in fetchAllPricesForCard held the
+      // whole render hostage to whichever source was slowest.
+      const cachedCard = window.cardCatalog.getCardById(cardId);
+      if (cachedCard?.yuyuteiPriceSgd > 0) {
+        const priceLine = document.getElementById('card-search-price-line');
+        if (priceLine) priceLine.innerHTML = `<div>S$${cachedCard.yuyuteiPriceSgd.toFixed(2)} (Yuyu-tei)</div>`;
+      }
     }
 
     const pricePromise = this.fetchAllPricesForCard(cardId, cardLang, displayName, card.number)
